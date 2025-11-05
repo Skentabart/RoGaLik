@@ -68,16 +68,12 @@ button, select { background:var(--btn); color:#fff; border:1px solid var(--btn-b
 </div>
 
 <script>
-// ====== Конфигурация ======
 let canvas = document.getElementById('game'), ctx = canvas.getContext('2d');
-let TILE = 32;
-const MAP_W = 50, MAP_H = 50;
-let VIEW = 7;
-
+let TILE = 32, MAP_W = 50, MAP_H = 50, VIEW = 7;
 let mapState, player, levelNum;
-let images = { player:null, wall:null, chest:null, floor:null, monster:null, monster_chaser:null, monster_jumper:null, monster_wanderer:null, monster_ranged:null };let fileInput = document.getElementById('fileInput');
+let images = { player:null, wall:null, chest:null, floor:null, monster_chaser:null, monster_jumper:null, monster_wanderer:null, monster_ranged:null };
+let fileInput = document.getElementById('fileInput');
 
-// UI
 const hpEl = document.getElementById('hp');
 const invEl = document.getElementById('invContent');
 const levelEl = document.getElementById('level');
@@ -89,10 +85,8 @@ const craftModal = document.getElementById('craftModal');
 const recipesList = document.getElementById('recipesList');
 const craftClose = document.getElementById('craftClose');
 const spriteTypeSelect = document.getElementById('spriteTypeSelect');
-const recipeFilter = document.getElementById('recipeFilter');
 
-// ====== Рецепты (пример) ======
-// Рецепт: ключ - имя результата, value - {requires: {itemName: count, ...}, description}
+// Рецепты
 const RECIPES = {
   'Супер-Зелье': { requires: {'Зелье среднее':1, 'Кристалл':1}, description: 'Восстанавливает много HP' },
   'Зелье среднее': { requires: {'Зелье малое':2}, description: 'Среднее зелье (из 2 малых).' },
@@ -100,7 +94,6 @@ const RECIPES = {
   'Зелье большое': { requires: {'Зелье среднее':1, 'Кристалл':1}, description: 'Большое зелье.' }
 };
 
-// ====== Утилиты ======
 function randInt(min,max){ return Math.floor(Math.random()*(max-min+1)) + min; }
 
 function resizeCanvas(){
@@ -108,20 +101,17 @@ function resizeCanvas(){
   const cols = Math.floor(vw / TILE), rows = Math.floor(vh / TILE);
   canvas.width = cols * TILE;
   canvas.height = rows * TILE;
-  // VIEW вычисляем как половина экрана в меньшей размерности, мин 3, макс 12
   VIEW = Math.max(3, Math.min(12, Math.floor(Math.min(cols, rows)/2) - 1));
   draw();
 }
 window.addEventListener('resize', resizeCanvas);
 
-// ====== Генерация карты и врагов с типами ======
 function generateMap(lv=1){
   const map = [];
   for(let y=0;y<MAP_H;y++){
     const row = [];
     for(let x=0;x<MAP_W;x++){
-      if(x===0 || y===0 || x===MAP_W-1 || y===MAP_H-1) row.push('#');
-      else row.push(Math.random() < 0.18 ? '#' : '.');
+      row.push((x===0||y===0||x===MAP_W-1||y===MAP_H-1) ? '#' : (Math.random()<0.18 ? '#' : '.'));
     }
     map.push(row);
   }
@@ -129,47 +119,33 @@ function generateMap(lv=1){
   map[MAP_H-2][Math.floor(MAP_W/2)] = '<';
 
   const lootNames = ['Зелье малое','Зелье среднее','Зелье большое','Монета','Кристалл'];
-  const items = [];
-  const chests = [];
-  const monsters = [];
+  const items = [], chests = [], monsters = [];
+  const TYPES = ['chaser','jumper','wanderer','ranged'];
 
   for(let i=0;i<10+lv*2;i++){
-    let ix,iy;
-    do{ ix = randInt(1,MAP_W-2); iy = randInt(1,MAP_H-2); } while(map[iy][ix] !== '.');
+    let ix,iy; do { ix = randInt(1,MAP_W-2); iy = randInt(1,MAP_H-2); } while(map[iy][ix] !== '.');
     items.push({x:ix,y:iy,type:lootNames[randInt(0,lootNames.length-1)]});
   }
-
   for(let i=0;i<3;i++){
-    let cx,cy;
-    do{ cx = randInt(1,MAP_W-2); cy = randInt(1,MAP_H-2); } while(map[cy][cx] !== '.');
+    let cx,cy; do { cx = randInt(1,MAP_W-2); cy = randInt(1,MAP_H-2); } while(map[cy][cx] !== '.');
     chests.push({x:cx,y:cy,content:[lootNames[randInt(0,lootNames.length-1)], lootNames[randInt(0,lootNames.length-1)]]});
   }
-
-  // Враги различных типов: chaser, jumper, wanderer, ranged
-  const TYPES = ['chaser','jumper','wanderer','ranged'];
   for(let i=0;i<5+lv;i++){
-    let mx,my;
-    do{ mx = randInt(1,MAP_W-2); my = randInt(1,MAP_H-2); } while(map[my][mx] !== '.');
-    const type = TYPES[randInt(0,TYPES.length-1)];
-    monsters.push({x:mx,y:my,hp:5+lv*randInt(1,2), dmg:1+Math.floor(lv/1), type: type, cooldown:0});
+    let mx,my; do { mx = randInt(1,MAP_W-2); my = randInt(1,MAP_H-2); } while(map[my][mx] !== '.');
+    monsters.push({x:mx,y:my,hp:5+lv*randInt(1,2), dmg:1+Math.floor(lv/1), type:TYPES[randInt(0,TYPES.length-1)], cooldown:0});
   }
 
   return { map, items, chests, monsters };
 }
 
-// ====== Инициализация состояния ======
 function init(){
   levelNum = 1;
   mapState = generateMap(levelNum);
   player = { x: Math.floor(MAP_W/2), y: Math.floor(MAP_H/2), hp: 100, inv: [] };
-  if(mapState.map[player.y][player.x] === '#'){ player.x = Math.floor(MAP_W/2); player.y = Math.floor(MAP_H/2); }
-  resizeCanvas();
-  updateUI();
-  draw();
+  resizeCanvas(); updateUI(); draw();
 }
 init();
 
-// ====== Отрисовка (исправлено смещение: используем integer camera center) ======
 function drawTileByType(type, px, py){
   if(type === '#'){
     if(images.wall && images.wall.complete) ctx.drawImage(images.wall, px, py, TILE, TILE);
@@ -177,355 +153,186 @@ function drawTileByType(type, px, py){
   } else if(type === '.' ){
     if(images.floor && images.floor.complete) ctx.drawImage(images.floor, px, py, TILE, TILE);
     else { ctx.fillStyle = '#111'; ctx.fillRect(px, py, TILE, TILE); }
-  } else if(type === '>'){
-    ctx.fillStyle = 'green'; ctx.fillRect(px, py, TILE, TILE);
-  } else if(type === '<'){
-    ctx.fillStyle = 'red'; ctx.fillRect(px, py, TILE, TILE);
+  } else if(type === '>'){ ctx.fillStyle = 'green'; ctx.fillRect(px, py, TILE, TILE);
+  } else if(type === '<'){ ctx.fillStyle = 'red'; ctx.fillRect(px, py, TILE, TILE);
+  } else { ctx.fillStyle = '#111'; ctx.fillRect(px, py, TILE, TILE); }
+}
+
+function drawMonster(m, px, py){
+  let imgKey = 'monster_' + m.type;
+  if(images[imgKey] && images[imgKey].complete){
+    ctx.drawImage(images[imgKey], px, py, TILE, TILE);
   } else {
-    ctx.fillStyle = '#111'; ctx.fillRect(px, py, TILE, TILE);
+    const col = m.type==='chaser'?'#8A2BE2':m.type==='jumper'?'#FF4500':m.type==='wanderer'?'#9ACD32':'#1E90FF';
+    ctx.fillStyle = col; ctx.fillRect(px, py, TILE, TILE);
   }
 }
 
 function draw(){
-  if(!ctx) return;
   ctx.clearRect(0,0,canvas.width,canvas.height);
-
   const cols = canvas.width / TILE, rows = canvas.height / TILE;
-
-  // ВЫРАВНИВАНИЕ: используем целочисленный смещённый центр
-  const halfCols = Math.floor(cols/2);
-  const halfRows = Math.floor(rows/2);
-  const camX = player.x - halfCols;
-  const camY = player.y - halfRows;
+  const halfCols = Math.floor(cols/2), halfRows = Math.floor(rows/2);
+  const camX = player.x - halfCols, camY = player.y - halfRows;
 
   for(let row=0; row<rows; row++){
     for(let col=0; col<cols; col++){
-      const gx = col + camX;
-      const gy = row + camY;
-      const px = col * TILE;
-      const py = row * TILE;
-      if(gx >= 0 && gy >= 0 && gx < MAP_W && gy < MAP_H){
-        const t = mapState.map[gy][gx];
-        drawTileByType(t, px, py);
-      } else {
-        ctx.fillStyle = '#000';
-        ctx.fillRect(px, py, TILE, TILE);
-      }
+      const gx = col + camX, gy = row + camY;
+      const px = col*TILE, py = row*TILE;
+      if(gx>=0 && gy>=0 && gx<MAP_W && gy<MAP_H) drawTileByType(mapState.map[gy][gx], px, py);
+      else { ctx.fillStyle='#000'; ctx.fillRect(px, py, TILE, TILE); }
     }
   }
 
-  // предметы
   mapState.items.forEach(it=>{
     const ix = it.x - camX, iy = it.y - camY;
-    if(ix >= 0 && iy >= 0 && ix < cols && iy < rows){
-      const sx = ix * TILE, sy = iy * TILE;
-      ctx.fillStyle = 'orange';
-      ctx.fillRect(sx + TILE*0.2, sy + TILE*0.2, TILE*0.6, TILE*0.6);
-    }
+    if(ix>=0 && iy>=0 && ix<cols && iy<rows){ ctx.fillStyle='orange'; ctx.fillRect(ix*TILE+TILE*0.2, iy*TILE+TILE*0.2, TILE*0.6, TILE*0.6); }
   });
 
-  // сундуки
   mapState.chests.forEach(c=>{
     const cx = c.x - camX, cy = c.y - camY;
-    if(cx >= 0 && cy >= 0 && cx < cols && cy < rows){
-      const sx = cx * TILE, sy = cy * TILE;
-      if(images.chest && images.chest.complete) ctx.drawImage(images.chest, sx, sy, TILE, TILE);
-      else { ctx.fillStyle = 'blue'; ctx.fillRect(sx, sy, TILE, TILE); }
+    if(cx>=0 && cy>=0 && cx<cols && cy<rows){
+      if(images.chest && images.chest.complete) ctx.drawImage(images.chest, cx*TILE, cy*TILE, TILE, TILE);
+      else { ctx.fillStyle='blue'; ctx.fillRect(cx*TILE, cy*TILE, TILE, TILE); }
     }
   });
 
-  // монстры
   mapState.monsters.forEach(m=>{
     const mx = m.x - camX, my = m.y - camY;
-    if(mx >= 0 && my >= 0 && mx < cols && my < rows){
-      const sx = mx * TILE, sy = my * TILE;
-      if(images.monster && images.monster.complete) ctx.drawImage(images.monster, sx, sy, TILE, TILE);
-      else { 
-        // разный цвет по типу
-        const col = m.type === 'chaser' ? '#8A2BE2' : m.type === 'jumper' ? '#FF4500' : m.type === 'wanderer' ? '#9ACD32' : '#1E90FF';
-        ctx.fillStyle = col; ctx.fillRect(sx, sy, TILE, TILE); 
-      }
-    }
+    if(mx>=0 && my>=0 && mx<cols && my<rows) drawMonster(m, mx*TILE, my*TILE);
   });
 
-  // игрок — центр: вычисляем экранные координаты (ровно середина клеток)
-  const playerScreenX = halfCols * TILE;
-  const playerScreenY = halfRows * TILE;
+  const playerScreenX = halfCols*TILE, playerScreenY = halfRows*TILE;
   if(images.player && images.player.complete) ctx.drawImage(images.player, playerScreenX, playerScreenY, TILE, TILE);
-  else { ctx.fillStyle = 'yellow'; ctx.fillRect(playerScreenX, playerScreenY, TILE, TILE); }
+  else { ctx.fillStyle='yellow'; ctx.fillRect(playerScreenX, playerScreenY, TILE, TILE); }
 }
 
-// ====== Логика: движение, атаки, ИИ ======
-function canMove(x,y){
-  if(x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) return false;
-  return mapState.map[y][x] !== '#';
+function canMove(x,y){ return x>=0 && y>=0 && x<MAP_W && y<MAP_H && mapState.map[y][x]!=='#'; }
+function inBounds(x,y){ return x>=0 && y>=0 && x<MAP_W && y<MAP_H; }
+function occupiedByMonster(x,y){ return mapState.monsters.some(m=>m.x===x && m.y===y); }
+
+function moveMonsters(){
+  for(let m of mapState.monsters){
+    if(m.cooldown && m.cooldown>0) m.cooldown--;
+    const dist = Math.abs(m.x-player.x)+Math.abs(m.y-player.y);
+    if(m.type==='chaser'){ if(dist===1){ player.hp-=m.dmg; continue; }
+      const nx=m.x+Math.sign(player.x-m.x), ny=m.y+Math.sign(player.y-m.y);
+      if(canMove(nx,ny) && !occupiedByMonster(nx,ny) && !(nx===player.x&&ny===player.y)){ m.x=nx; m.y=ny; }
+    } else if(m.type==='jumper'){ if(dist===1){ player.hp-=m.dmg; continue; }
+      const dx=Math.sign(player.x-m.x), dy=Math.sign(player.y-m.y);
+      const jumpX=m.x+dx*2, jumpY=m.y+dy*2, midX=m.x+dx, midY=m.y+dy;
+      if(dx!==0||dy!==0){
+        if(inBounds(jumpX,jumpY)&&canMove(jumpX,jumpY)&&!occupiedByMonster(jumpX,jumpY)&&!(jumpX===player.x&&jumpY===player.y)&&canMove(midX,midY)){ m.x=jumpX; m.y=jumpY; }
+        else { const nx=m.x+dx, ny=m.y+dy; if(canMove(nx,ny)&&!occupiedByMonster(nx,ny)&&!(nx===player.x&&ny===player.y)){ m.x=nx; m.y=ny; } }
+      }
+    } else if(m.type==='wanderer'){
+      if(Math.random()<0.6){ const dirs=[[1,0],[-1,0],[0,1],[0,-1]]; const [dx,dy]=dirs[randInt(0,dirs.length-1)]; const nx=m.x+dx, ny=m.y+dy; if(canMove(nx,ny)&&!occupiedByMonster(nx,ny)&&!(nx===player.x&&ny===player.y)){ m.x=nx; m.y=ny; } }
+      else { const nx=m.x+Math.sign(player.x-m.x), ny=m.y+Math.sign(player.y-m.y); if(canMove(nx,ny)&&!occupiedByMonster(nx,ny)&&!(nx===player.x&&ny===player.y)){ m.x=nx; m.y=ny; } }
+      if(Math.abs(m.x-player.x)+Math.abs(m.y-player.y)===1) player.hp-=m.dmg;
+    } else if(m.type==='ranged'){
+      if(dist<=2){ player.hp-=m.dmg; }
+      else if(dist<=6){ if(!m.cooldown){ player.hp-=m.dmg; m.cooldown=2; } }
+      else { const nx=m.x+Math.sign(player.x-m.x), ny=m.y+Math.sign(player.y-m.y); if(canMove(nx,ny)&&!occupiedByMonster(nx,ny)&&!(nx===player.x&&ny===player.y)){ m.x=nx; m.y=ny; } }
+    }
+  }
+}
+
+function collectAtPlayer(){
+  for(let i=mapState.items.length-1;i>=0;i--){ const it=mapState.items[i]; if(it.x===player.x && it.y===player.y){ player.inv.push(it.type); mapState.items.splice(i,1); } }
+  for(let i=mapState.chests.length-1;i>=0;i--){ const c=mapState.chests[i]; if(c.x===player.x && c.y===player.y){ c.content.forEach(v=>player.inv.push(v)); mapState.chests.splice(i,1); } }
+}
+
+function playerStep(dx,dy){
+  const nx=player.x+dx, ny=player.y+dy; if(!inBounds(nx,ny)) return; if(!canMove(nx,ny)) return; if(occupiedByMonster(nx,ny)) return;
+  player.x=nx; player.y=ny; moveMonsters(); collectAtPlayer();
+  const tile=mapState.map[player.y][player.x];
+  if(tile==='>'){ levelNum++; mapState=generateMap(levelNum); player.x=Math.floor(MAP_W/2); player.y=1; }
+  if(tile==='<'){ levelNum=Math.max(1,levelNum-1); mapState=generateMap(levelNum); player.x=Math.floor(MAP_W/2); player.y=MAP_H-2; }
+  if(player.hp<=0){ alert('Вы погибли. Рестарт уровня.'); player.hp=100; player.inv=[]; mapState=generateMap(levelNum); player.x=Math.floor(MAP_W/2); player.y=Math.floor(MAP_H/2); }
+  updateUI(); draw();
 }
 
 function attack(){
-  for(let i = mapState.monsters.length - 1; i >= 0; i--){
-    const m = mapState.monsters[i];
-    const dist = Math.abs(m.x - player.x) + Math.abs(m.y - player.y);
-    if(dist === 1){
-      mapState.monsters.splice(i,1);
-    }
-  }
+  for(let i=mapState.monsters.length-1;i>=0;i--){ const m=mapState.monsters[i]; if(Math.abs(m.x-player.x)+Math.abs(m.y-player.y)===1){ m.hp-=5; if(m.hp<=0) mapState.monsters.splice(i,1); } }
+  moveMonsters(); if(player.hp<=0){ alert('Вы погибли'); player.hp=100; player.inv=[]; mapState=generateMap(levelNum); player.x=Math.floor(MAP_W/2); player.y=Math.floor(MAP_H/2); }
   updateUI(); draw();
 }
 
-// Поведение для типов врагов
-function moveMonsters(){
-  // обновляем по одному шагу на монстра после хода игрока
-  for(let m of mapState.monsters){
-    // маленький cooldown, чтобы дальник стрелял не каждый ход слишком часто
-    if(m.cooldown && m.cooldown > 0) m.cooldown--;
-
-    const distMan = Math.abs(m.x - player.x) + Math.abs(m.y - player.y);
-    if(m.type === 'chaser'){
-      // просто идёт к игроку (по оси)
-      if(distMan === 1) { player.hp -= m.dmg; continue; }
-      let mx = Math.sign(player.x - m.x), my = Math.sign(player.y - m.y);
-      const nx = m.x + mx, ny = m.y + my;
-      if(canMove(nx, ny) && !occupiedByMonster(nx, ny) && !(nx === player.x && ny === player.y)){
-        m.x = nx; m.y = ny;
-      }
-    } else if(m.type === 'jumper'){
-      // пытается прыгнуть на 2 клетки в направлении игрока (если путь свободен), иначе обычный ход
-      if(distMan === 1) { player.hp -= m.dmg; continue; }
-      let dx = Math.sign(player.x - m.x), dy = Math.sign(player.y - m.y);
-      const jumpX = m.x + dx*2, jumpY = m.y + dy*2;
-      const midX = m.x + dx, midY = m.y + dy;
-      if(dx !== 0 || dy !== 0){
-        if(inBounds(jumpX, jumpY) && canMove(jumpX, jumpY) && !occupiedByMonster(jumpX,jumpY) && !(jumpX===player.x && jumpY===player.y) && canMove(midX, midY)){
-          m.x = jumpX; m.y = jumpY;
-        } else {
-          // fallback: шаг на 1
-          const nx = m.x + dx, ny = m.y + dy;
-          if(canMove(nx, ny) && !occupiedByMonster(nx, ny) && !(nx===player.x && ny===player.y)){ m.x = nx; m.y = ny; }
-        }
-      }
-    } else if(m.type === 'wanderer'){
-      // случайный шаг (иногда к игроку)
-      if(Math.random() < 0.6){
-        // случайный
-        const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-        const [dx,dy] = dirs[randInt(0,dirs.length-1)];
-        const nx = m.x + dx, ny = m.y + dy;
-        if(canMove(nx, ny) && !occupiedByMonster(nx, ny) && !(nx===player.x && ny===player.y)) { m.x = nx; m.y = ny; }
-      } else {
-        // небольшой поиск игрока
-        let mx = Math.sign(player.x - m.x), my = Math.sign(player.y - m.y);
-        const nx = m.x + mx, ny = m.y + my;
-        if(canMove(nx, ny) && !occupiedByMonster(nx, ny) && !(nx==player.x && ny==player.y)){ m.x = nx; m.y = ny; }
-      }
-      if(Math.abs(m.x - player.x) + Math.abs(m.y - player.y) === 1) player.hp -= m.dmg;
-    } else if(m.type === 'ranged'){
-      // дальний: если в определённом диапазоне — стреляет (урон), не приближаясь. Иначе двигается назад/вбок.
-      const dist = Math.abs(m.x - player.x) + Math.abs(m.y - player.y);
-      if(dist <= 2){
-        // близко — урон врукопашную
-        player.hp -= m.dmg;
-      } else if(dist <= 6){
-        // стреляет раз в 2 хода
-        if(!m.cooldown){
-          player.hp -= m.dmg; m.cooldown = 2;
-        }
-      } else {
-        // пытается приблизиться, но держать дистанцию — двигается на 1 ближе
-        let mx = Math.sign(player.x - m.x), my = Math.sign(player.y - m.y);
-        const nx = m.x + mx, ny = m.y + my;
-        if(canMove(nx, ny) && !occupiedByMonster(nx, ny) && !(nx===player.x && ny===player.y)) { m.x = nx; m.y = ny; }
-      }
-    }
-  }
-}
-
-function occupiedByMonster(x,y){
-  return mapState.monsters.some(mm => mm.x === x && mm.y === y);
-}
-function inBounds(x,y){ return x>=0 && y>=0 && x<MAP_W && y<MAP_H; }
-
-// Сбор при нахождении на клетке
-function collectAtPlayer(){
-  for(let i = mapState.items.length - 1; i >= 0; i--){
-    const item = mapState.items[i];
-    if(item.x === player.x && item.y === player.y){
-      player.inv.push(item.type);
-      mapState.items.splice(i,1);
-    }
-  }
-  for(let i = mapState.chests.length - 1; i >= 0; i--){
-    const c = mapState.chests[i];
-    if(c.x === player.x && c.y === player.y){
-      c.content.forEach(v => player.inv.push(v));
-      mapState.chests.splice(i,1);
-    }
-  }
-}
-
-// Один шаг игрока (пошаговая механика)
-function playerStep(dx, dy){
-  const nx = player.x + dx, ny = player.y + dy;
-  if(!inBounds(nx,ny)) return;
-  if(!canMove(nx, ny)) return;
-  if(occupiedByMonster(nx, ny)) return; // не встаём на монстра
-  player.x = nx; player.y = ny;
-  moveMonsters();
-  collectAtPlayer();
-
-  const tile = mapState.map[player.y][player.x];
-  if(tile === '>'){ levelNum++; mapState = generateMap(levelNum); player.x = Math.floor(MAP_W/2); player.y = 1; }
-  if(tile === '<'){ levelNum = Math.max(1, levelNum-1); mapState = generateMap(levelNum); player.x = Math.floor(MAP_W/2); player.y = MAP_H-2; }
-
-  if(player.hp <= 0){
-    alert('Вы погибли. Рестарт уровня.');
-    player.hp = 100; player.inv = []; mapState = generateMap(levelNum); player.x = Math.floor(MAP_W/2); player.y = Math.floor(MAP_H/2);
-  }
+function usePotion(){
+  if(player.inv.length===0) return;
+  const potIndex=player.inv.findIndex(i=>i.includes('Зелье'));
+  if(potIndex===-1) return;
+  const name = player.inv[potIndex];
+  const healMap = {'Зелье малое':20,'Зелье среднее':50,'Зелье большое':100,'Супер-Зелье':150};
+  player.hp = Math.min(100, player.hp + (healMap[name]||0));
+  player.inv.splice(potIndex,1);
   updateUI(); draw();
 }
 
-// ====== Инвентарь UI ======
 function updateUI(){
   hpEl.textContent = player.hp;
   levelEl.textContent = levelNum;
-  // подсчёт
-  const counts = {};
-  for(const it of player.inv){ counts[it] = (counts[it]||0) + 1; }
-  if(Object.keys(counts).length === 0){
-    invEl.innerText = 'Пусто';
-    return;
-  }
-  const lines = [];
-  for(const k in counts) lines.push(counts[k] > 1 ? `${k} x${counts[k]}` : `${k}`);
-  invEl.innerHTML = lines.join('<br>');
+  invEl.textContent = player.inv.length? player.inv.join(', '):'Пусто';
 }
 
-// Использование зелья (X)
-function useItem(){
-  // ищем любое зелье (предпочтение большему)
-  const order = ['Зелье большое','Супер-Зелье','Зелье среднее','Зелье малое'];
-  for(const name of order){
-    const idx = player.inv.indexOf(name);
-    if(idx !== -1){
-      // эффект
-      const heal = name === 'Зелье малое' ? 20 : name === 'Зелье среднее' ? 50 : 100;
-      player.hp = Math.min(100, player.hp + heal);
-      player.inv.splice(idx,1);
-      updateUI(); draw();
-      return;
-    }
-  }
-}
-
-// ====== Клавиши ======
-window.addEventListener('keydown', (e)=>{
-  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
-  switch(e.key){
-    case 'ArrowUp': playerStep(0,-1); break;
-    case 'ArrowDown': playerStep(0,1); break;
-    case 'ArrowLeft': playerStep(-1,0); break;
-    case 'ArrowRight': playerStep(1,0); break;
-    case 'z': attack(); break;
-    case 'x': useItem(); break;
-  }
+// Управление
+window.addEventListener('keydown', e=>{
+  if(e.key==='ArrowUp') playerStep(0,-1);
+  else if(e.key==='ArrowDown') playerStep(0,1);
+  else if(e.key==='ArrowLeft') playerStep(-1,0);
+  else if(e.key==='ArrowRight') playerStep(1,0);
+  else if(e.key.toLowerCase()==='z') attack();
+  else if(e.key.toLowerCase()==='x') usePotion();
 });
 
-// ====== Спавн предметов (инструмент) ======
-function spawnItems(count = 6){
-  for(let i=0;i<count;i++){
-    let x,y; do { x = randInt(1,MAP_W-2); y = randInt(1,MAP_H-2); } while(mapState.map[y][x] !== '.');
-    mapState.items.push({x,y,type: Math.random()<0.6 ? 'Зелье малое' : Math.random()<0.5 ? 'Зелье среднее' : 'Монета'});
-  }
-  updateUI(); draw();
-}
-
-// ====== Кнопки / загрузка спрайтов ======
-btnUpload.onclick = ()=> fileInput.click();
-
-fileInput.addEventListener('change', (ev)=>{
-  const file = ev.target.files && ev.target.files[0];
-  if(!file) return;
-  const img = new Image();
-  img.onload = ()=>{
-    const choice = spriteTypeSelect.value;
-    switch(choice){
-      case 'player': images.player = img; break;
-      case 'monster_chaser': images.monster_chaser = img; break;
-      case 'monster_jumper': images.monster_jumper = img; break;
-      case 'monster_wanderer': images.monster_wanderer = img; break;
-      case 'monster_ranged': images.monster_ranged = img; break;
-      case 'wall': images.wall = img; break;
-      case 'chest': images.chest = img; break;
-      case 'floor': images.floor = img; break;
-      default: alert('Неизвестный тип'); return;
-    }
-    draw();
-  };
-  img.onerror = ()=> alert('Не удалось загрузить изображение');
-  img.src = URL.createObjectURL(file);
-});
-
-btnUse.addEventListener('click', ()=> useItem());
-
-tileSizeSelect.addEventListener('change', (e)=>{
-  const v = parseInt(e.target.value);
-  if(!isNaN(v) && v >= 16){ TILE = v; resizeCanvas(); }
-});
-
-// ====== Меню крафта ======
-function openCraft(){
-  // Заполняем recipesList
-  recipesList.innerHTML = '';
-  for(const result in RECIPES){
-    const rec = RECIPES[result];
-    const div = document.createElement('div');
-    div.className = 'recipe';
-    const reqs = Object.entries(rec.requires).map(([k,v]) => `${k} x${v}`).join(', ');
-    div.innerHTML = `<b>${result}</b> <div class="small-muted">${rec.description || ''}</div>
-      <div class="small-muted">Требуется: ${reqs}</div>
-      <div style="margin-top:6px"><button class="craftBtn small">Создать</button></div>`;
-    // attach create handler
-    div.querySelector('.craftBtn').addEventListener('click', ()=> tryCraft(result));
+// Крафт
+btnCraftOpen.onclick = ()=>{ renderRecipes(); craftModal.style.display='block'; }
+craftClose.onclick = ()=>{ craftModal.style.display='none'; }
+function renderRecipes(){
+  recipesList.innerHTML='';
+  for(const key in RECIPES){
+    const r=RECIPES[key];
+    const div=document.createElement('div'); div.className='recipe';
+    div.innerHTML=`<b>${key}</b> — ${r.description} <br><span class="small-muted">Требуется: ${Object.entries(r.requires).map(([k,v])=>v+'x '+k).join(', ')}</span>`;
+    const btn=document.createElement('button'); btn.textContent='Сотворить'; btn.className='small';
+    btn.onclick=()=>{ attemptCraft(key); };
+    div.appendChild(document.createElement('br')); div.appendChild(btn);
     recipesList.appendChild(div);
   }
-  craftModal.style.display = 'block';
 }
-function closeCraft(){ craftModal.style.display = 'none'; }
-btnCraftOpen.addEventListener('click', openCraft);
-craftClose.addEventListener('click', closeCraft);
 
-function getInventoryCounts(){
-  const counts = {};
-  for(const it of player.inv){ counts[it] = (counts[it]||0) + 1; }
-  return counts;
-}
-function tryCraft(resultName){
-  const recipe = RECIPES[resultName];
-  if(!recipe) return alert('Рецепт не найден');
-  const have = getInventoryCounts();
-  for(const req in recipe.requires){
-    if(!have[req] || have[req] < recipe.requires[req]) return alert('Недостаточно компонентов');
+function attemptCraft(name){
+  const r=RECIPES[name]; if(!r) return;
+  for(const [k,v] of Object.entries(r.requires)){
+    const count=player.inv.filter(i=>i===k).length;
+    if(count<v){ alert('Недостаточно ингредиентов'); return; }
   }
-  // списываем компоненты (удаляем из массива player.inv required count)
-  for(const req in recipe.requires){
-    let need = recipe.requires[req];
-    for(let i = player.inv.length - 1; i >= 0 && need > 0; i--){
-      if(player.inv[i] === req){ player.inv.splice(i,1); need--; }
-    }
+  // Удаляем ингредиенты
+  for(const [k,v] of Object.entries(r.requires)){
+    for(let i=0;i<v;i++){ const idx=player.inv.indexOf(k); if(idx>=0) player.inv.splice(idx,1); }
   }
-  // добавляем результат
-  player.inv.push(resultName);
-  updateUI();
-  alert(`${resultName} создан`);
+  player.inv.push(name);
+  updateUI(); draw();
+  alert(name+' создано!');
 }
 
-// ====== Начальные действия/защита от багов ======
-function safeDraw(){ try{ draw(); } catch(e){ console.error(e); } }
-safeDraw();
-resizeCanvas();
-updateUI();
+// Загрузка спрайта
+btnUpload.onclick = ()=>{ fileInput.click(); }
+fileInput.onchange = (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    const img = new Image(); img.src=ev.target.result;
+    img.onload = ()=>{ images[spriteTypeSelect.value]=img; draw(); }
+  };
+  reader.readAsDataURL(file);
+}
 
-// ====== Экспорт/дебаг спавн для тестов ======
-window.spawnItems = spawnItems;
+// Изменение размера клетки
+tileSizeSelect.addEventListener('change', e=>{
+  TILE=parseInt(e.target.value)||32;
+  resizeCanvas();
+});
+
 </script>
 </body>
 </html>
