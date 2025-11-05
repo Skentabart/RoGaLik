@@ -134,9 +134,25 @@ function generateMap(lv=1){
     }
     map.push(row);
   }
-  // двери (вход/выход)
-  map[1][Math.floor(MAP_W/2)] = '>';
-  map[MAP_H-2][Math.floor(MAP_W/2)] = '<';
+// Создаём двери, отодвинутые от краёв карты
+map[2][Math.floor(MAP_W/2)] = '>'; // дверь вниз (в начало уровня)
+map[MAP_H - 3][Math.floor(MAP_W/2)] = '<'; // дверь вверх (в конец уровня)
+
+// Очищаем пространство вокруг дверей (чтобы не застревал игрок)
+const doors = [
+  {x: Math.floor(MAP_W/2), y: 2},
+  {x: Math.floor(MAP_W/2), y: MAP_H - 3}
+];
+for (const d of doors) {
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const nx = d.x + dx, ny = d.y + dy;
+      if (nx >= 0 && ny >= 0 && nx < MAP_W && ny < MAP_H) {
+        if (map[ny][nx] === '#') map[ny][nx] = '.';
+      }
+    }
+  }
+}
 
   const lootNames = ['Зелье малое','Зелье среднее','Зелье большое','Монета','Кристалл'];
   const chests = [], monsters = [];
@@ -327,22 +343,41 @@ function playerStep(dx,dy){
   collectChest();
 
   const tile = mapState.map[ny][nx];
-  if(tile === '>'){
-    // подняться на следующий уровень
-    levelNum++;
-    mapState = generateMap(levelNum);
-    // ставим игрока у входа
-    player.x = 1; player.y = 1;
-    // прогрессия: уровень игрока + урон
-    player.level++;
-    player.dmg += 5;
-    player.hp = 100;
-  } else if(tile === '<' && levelNum > 1){
-    levelNum--;
-    mapState = generateMap(levelNum);
-    player.x = MAP_W - 2; player.y = MAP_H - 2;
-    // при спуске можно не давать прогрессию назад
+
+if (tile === '>') {
+  // переход вниз (на следующий уровень)
+  levelNum++;
+  player.level = levelNum; // обновляем уровень игрока
+  mapState = generateMap(levelNum);
+
+  // найти дверь вверх и поставить игрока рядом
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      if (mapState.map[y][x] === '<') {
+        player.x = x;
+        player.y = y + 1;
+        break;
+      }
+    }
   }
+
+} else if (tile === '<') {
+  // переход вверх (тоже повышает уровень)
+  levelNum++;
+  player.level = levelNum; // обновляем уровень игрока
+  mapState = generateMap(levelNum);
+
+  // найти дверь вниз и поставить игрока рядом
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      if (mapState.map[y][x] === '>') {
+        player.x = x;
+        player.y = y - 1;
+        break;
+      }
+    }
+  }
+}
 
   if(player.hp <= 0){ alert('Вы умерли!'); init(); return; }
   updateUI();
