@@ -256,6 +256,19 @@ function draw(){
   const playerScreenX = halfCols*TILE, playerScreenY = halfRows*TILE;
   if(images.player && images.player.complete) ctx.drawImage(images.player, playerScreenX, playerScreenY, TILE, TILE);
   else { ctx.fillStyle='yellow'; ctx.fillRect(playerScreenX, playerScreenY, TILE, TILE); }
+    // 🔦 ЭФФЕКТ ЗАТЕМНЕНИЯ вокруг игрока
+  const radius = 5 * TILE; // радиус освещения
+  const cx = playerScreenX + TILE / 2;
+  const cy = playerScreenY + TILE / 2;
+
+  // затемнение по всей карте
+  const gradient = ctx.createRadialGradient(cx, cy, radius * 0.5, cx, cy, radius);
+  gradient.addColorStop(0, 'rgba(0,0,0,0)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0.95)');
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
 }
 
 /* -----------------------------
@@ -528,3 +541,4 @@ draw();
 </script>
 </body>
 </html>
+
