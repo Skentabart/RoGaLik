@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Веб-рогалик — craft & AI enemies (объединённый)</title>
+<style>
+:root{ --ui-bg: rgba(0,0,0,0.78); --btn:#111; --btn-border:#fff; }
+body{ margin:0; background:#000; color:#fff; font-family:monospace; overflow:hidden; }
+#gameWrap{ position:relative; width:100vw; height:100vh; }
+canvas{ display:block; background:#000; image-rendering: pixelated; }
+#ui{ position:absolute; right:10px; top:10px; background:var(--ui-bg); padding:10px; border:1px solid #444; width:360px; font-size:14px; line-height:1.3; }
+#invContent{ max-height:34vh; overflow:auto; margin-top:6px; white-space:pre-wrap; }
+#controls{ margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; }
+button, select { background:var(--btn); color:#fff; border:1px solid var(--btn-border); padding:6px 8px; cursor:pointer; }
+.small{ padding:4px 6px; font-size:13px; }
+.hint{ font-size:12px; color:#bbb; margin-top:6px; }
+.modal{ position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.95); border:1px solid #666; padding:12px; z-index:50; max-width:90vw; max-height:90vh; overflow:auto; }
+.row{ display:flex; gap:8px; align-items:center; }
+.recipe { border:1px solid #333; padding:8px; margin:6px 0; }
+.small-muted{ color:#aaa; font-size:12px; }
+.input-inline{ display:inline-block; margin-left:6px; }
+.header-row{ display:flex; gap:8px; align-items:center; justify-content:space-between; }
+.stat { font-size:12px; color:#ccc; }
+</style>
+</head>
+<body>
+<div id="gameWrap">
+  <canvas id="game"></canvas>
+
+  <div id="ui">
+    <div class="header-row">
+      <div>Уровень: <b id="level">1</b></div>
+      <div class="stat">HP: <b id="hp">100</b> &nbsp; Урон: <b id="dmg">10</b></div>
+    </div>
+
+    <div style="margin-top:6px"><b>Инвентарь:</b></div>
+    <div id="invContent">Пусто</div>
+
+    <div id="controls">
+      <button id="btnUpload" class="small">Загрузить спрайт</button>
+      <button id="btnCraftOpen" class="small">Крафт</button>
+      <button id="btnUse" class="small">Использовать (X)</button>
+      <select id="tileSizeSelect" class="small" title="Размер клетки">
+        <option value="24">Клетка 24</option>
+        <option value="32" selected>Клетка 32</option>
+        <option value="40">Клетка 40</option>
+      </select>
+    </div>
+
+    <div id="spriteControls" style="margin-top:8px">
+      <select id="spriteTypeSelect" class="small" title="Тип спрайта">
+         <option value="player">Игрок</option>
+         <option value="monster_chaser">Враг (Chaser)</option>
+         <option value="monster_jumper">Враг (Jumper)</option>
+         <option value="monster_wanderer">Враг (Wanderer)</option>
+         <option value="monster_ranged">Враг (Ranged)</option>
+         <option value="wall">Стена</option>
+         <option value="chest">Сундук</option>
+         <option value="floor">Пол</option>
+         <option value="coin">Монета</option>
+         <option value="door_up">Дверь вверх</option>
+         <option value="door_down">Дверь вниз</option>
+      </select>
+    </div>
+
+    <div class="hint">Управление: стрелки — ход, Z — атака, C — усиленная атака, X — использовать зелье.</div>
+  </div>
+</div>
+
+<input id="fileInput" type="file" accept="image/*" style="display:none" />
+
+<div id="craftModal" class="modal" style="display:none">
+  <h3>Крафт — рецепты</h3>
+  <div id="recipesList"></div>
+  <div style="margin-top:10px"><button id="craftClose" class="small">Закрыть</button></div>
+</div>
+
+<script>
+/* -----------------------------
+   Конфигурация / данные
+   ----------------------------- */
+const canvas = document.getElementById('game'), ctx = canvas.getContext('2d');
+let TILE = 32, MAP_W = 50, MAP_H = 50, VIEW = 7;
+let mapState, player, levelNum;
+let images = { player:null, wall:null, chest:null, floor:null, monster_chaser:null, monster_jumper:null, monster_wanderer:null, monster_ranged:null, coin:null, door_up:null, door_down:null };
+const fileInput = document.getElementById('fileInput');
+
+const hpEl = document.getElementById('hp');
+const invEl = document.getElementById('invContent');
+const levelEl = document.getElementById('level');
+const dmgEl = document.getElementById('dmg');
+const btnUpload = document.getElementById('btnUpload');
+const btnUse = document.getElementById('btnUse');
+const tileSizeSelect = document.getElementById('tileSizeSelect');
+const btnCraftOpen = document.getElementById('btnCraftOpen');
+const craftModal = document.getElementById('craftModal');
+const recipesList = document.getElementById('recipesList');
+const craftClose = document.getElementById('craftClose');
+const spriteTypeSelect = document.getElementById('spriteTypeSelect');
+
+const RECIPES = {
+  'Супер-Зелье': { requires: {'Зелье среднее':1, 'Кристалл':1}, description: 'Восстанавливает много HP' },
+  'Зелье среднее': { requires: {'Зелье малое':2}, description: 'Среднее зелье (из 2 малых).' },
+  'Кристалл': { requires: {'Монета':3}, description: 'Собери 3 монеты → кристалл.' },
+  'Зелье большое': { requires: {'Зелье среднее':1, 'Кристалл':1}, description: 'Большое зелье.' }
+};
+
+function randInt(min,max){ return Math.floor(Math.random()*(max-min+1)) + min; }
+
+/* -----------------------------
+   Canvas / размер
+   ----------------------------- */
+function resizeCanvas(){
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const cols = Math.max(5, Math.floor(vw / TILE)), rows = Math.max(5, Math.floor(vh / TILE));
+  canvas.width = cols * TILE;
+  canvas.height = rows * TILE;
+  VIEW = Math.max(3, Math.min(12, Math.floor(Math.min(cols, rows)/2) - 1));
+  draw();
+}
+window.addEventListener('resize', resizeCanvas);
+
+/* -----------------------------
+   Генерация карты (сундуки + монстры)
+   Лут *только* в сундуках — никаких предметов на полу
+   ----------------------------- */
+function generateMap(lv=1){
+  const map = [];
+  for(let y=0;y<MAP_H;y++){
+    const row = [];
+    for(let x=0;x<MAP_W;x++){
+      row.push((x===0||y===0||x===MAP_W-1||y===MAP_H-1) ? '#' : (Math.random()<0.18 ? '#' : '.'));
+    }
+    map.push(row);
+  }
+// Создаём двери, отодвинутые от краёв карты
+map[2][Math.floor(MAP_W/2)] = '>'; // дверь вниз (в начало уровня)
+map[MAP_H - 3][Math.floor(MAP_W/2)] = '<'; // дверь вверх (в конец уровня)
+
+// Очищаем пространство вокруг дверей (чтобы не застревал игрок)
+const doors = [
+  {x: Math.floor(MAP_W/2), y: 2},
+  {x: Math.floor(MAP_W/2), y: MAP_H - 3}
+];
+for (const d of doors) {
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const nx = d.x + dx, ny = d.y + dy;
+      if (nx >= 0 && ny >= 0 && nx < MAP_W && ny < MAP_H) {
+        if (map[ny][nx] === '#') map[ny][nx] = '.';
+      }
+    }
+  }
+}
+
+  const lootNames = ['Зелье малое','Зелье среднее','Зелье большое','Монета','Кристалл'];
+  const chests = [], monsters = [];
+  const TYPES = ['chaser','jumper','wanderer','ranged'];
+
+  // сундуки — чем выше уровень, тем больше сундуков (и в каждом — 1-3 предмета)
+  const chestCount = 3 + Math.min(6, lv);
+  for(let i=0;i<chestCount;i++){
+    let cx,cy; do { cx = randInt(1,MAP_W-2); cy = randInt(1,MAP_H-2); } while(map[cy][cx] === '#');
+    const content = [];
+    const itemsInChest = randInt(1, Math.min(3, 2 + Math.floor(lv/2)));
+    for(let k=0;k<itemsInChest;k++) content.push(lootNames[randInt(0, lootNames.length-1)]);
+    chests.push({ x:cx, y:cy, content });
+  }
+
+  // монстры (не дропают лут сами)
+  for(let i=0;i<5+lv;i++){
+    let mx,my; do { mx = randInt(1,MAP_W-2); my = randInt(1,MAP_H-2); } while(map[my][mx] === '#');
+    monsters.push({ x:mx, y:my, hp:5 + lv*randInt(1,2), dmg:1 + Math.floor(lv/1), type: TYPES[randInt(0,TYPES.length-1)], cooldown:0 });
+  }
+
+  return { map, chests, monsters };
+}
+
+/* -----------------------------
+   Инициализация
+   ----------------------------- */
+function init(){
+  levelNum = 1;
+  mapState = generateMap(levelNum);
+  player = { x: Math.floor(MAP_W/2), y: Math.floor(MAP_H/2), hp: 100, inv: [], level:1, dmg:10 };
+  resizeCanvas();
+  updateUI();
+  draw();
+}
+init();
+
+/* -----------------------------
+   Рисование
+   ----------------------------- */
+function drawTileByType(type, px, py){
+  if(type === '#'){
+    if(images.wall && images.wall.complete) ctx.drawImage(images.wall, px, py, TILE, TILE);
+    else { ctx.fillStyle = '#666'; ctx.fillRect(px, py, TILE, TILE); }
+  } else if(type === '.' ){
+    if(images.floor && images.floor.complete) ctx.drawImage(images.floor, px, py, TILE, TILE);
+    else { ctx.fillStyle = '#111'; ctx.fillRect(px, py, TILE, TILE); }
+  } else if(type === '>'){
+    if(images.door_up && images.door_up.complete) ctx.drawImage(images.door_up, px, py, TILE, TILE);
+    else { ctx.fillStyle='green'; ctx.fillRect(px, py, TILE, TILE); }
+  } else if(type === '<'){
+    if(images.door_down && images.door_down.complete) ctx.drawImage(images.door_down, px, py, TILE, TILE);
+    else { ctx.fillStyle='red'; ctx.fillRect(px, py, TILE, TILE); }
+  } else {
+    ctx.fillStyle = '#111'; ctx.fillRect(px, py, TILE, TILE);
+  }
+}
+
+function drawMonster(m, px, py){
+  let imgKey = 'monster_' + m.type;
+  if(images[imgKey] && images[imgKey].complete){
+    ctx.drawImage(images[imgKey], px, py, TILE, TILE);
+  } else {
+    const col = m.type==='chaser'?'#8A2BE2':m.type==='jumper'?'#FF4500':m.type==='wanderer'?'#9ACD32':'#1E90FF';
+    ctx.fillStyle = col; ctx.fillRect(px, py, TILE, TILE);
+  }
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const cols = canvas.width / TILE, rows = canvas.height / TILE;
+  const halfCols = Math.floor(cols/2), halfRows = Math.floor(rows/2);
+  const camX = player.x - halfCols, camY = player.y - halfRows;
+
+  // тайлы
+  for(let row=0; row<rows; row++){
+    for(let col=0; col<cols; col++){
+      const gx = col + camX, gy = row + camY;
+      const px = col*TILE, py = row*TILE;
+      if(gx>=0 && gy>=0 && gx<MAP_W && gy<MAP_H) drawTileByType(mapState.map[gy][gx], px, py);
+      else { ctx.fillStyle='#000'; ctx.fillRect(px, py, TILE, TILE); }
+    }
+  }
+
+  // сундуки
+  mapState.chests.forEach(c=>{
+    const cx = c.x - camX, cy = c.y - camY;
+    if(cx>=0 && cy>=0 && cx<cols && cy<rows){
+      if(images.chest && images.chest.complete) ctx.drawImage(images.chest, cx*TILE, cy*TILE, TILE, TILE);
+      else { ctx.fillStyle='blue'; ctx.fillRect(cx*TILE, cy*TILE, TILE, TILE); }
+    }
+  });
+
+  // монстры
+  mapState.monsters.forEach(m=>{
+    const mx = m.x - camX, my = m.y - camY;
+    if(mx>=0 && my>=0 && mx<cols && my<rows) drawMonster(m, mx*TILE, my*TILE);
+  });
+
+  // игрок в центре
+  const playerScreenX = halfCols*TILE, playerScreenY = halfRows*TILE;
+  if(images.player && images.player.complete) ctx.drawImage(images.player, playerScreenX, playerScreenY, TILE, TILE);
+  else { ctx.fillStyle='yellow'; ctx.fillRect(playerScreenX, playerScreenY, TILE, TILE); }
+  // 🔦 ЭФФЕКТ ЗАТЕМНЕНИЯ (с "дыханием света")
+  lightFlicker = 0.85 + Math.sin(Date.now() / 250) * 0.05;
+  const radius = 5 * TILE * lightFlicker;
+  const cx = playerScreenX + TILE / 2;
+  const cy = playerScreenY + TILE / 2;
+
+  const gradient = ctx.createRadialGradient(cx, cy, radius * 0.3, cx, cy, radius);
+  gradient.addColorStop(0, 'rgba(0,0,0,0)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0.95)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+/* -----------------------------
+   Логика перемещений / столкновений
+   ----------------------------- */
+function canMove(x,y){ return x>=0 && y>=0 && x<MAP_W && y<MAP_H && mapState.map[y][x] !== '#'; }
+function inBounds(x,y){ return x>=0 && y>=0 && x<MAP_W && y<MAP_H; }
+function occupiedByMonster(x,y){ return mapState.monsters.some(m=>m.x===x && m.y===y); }
+
+function moveMonsters(){
+  for(let m of mapState.monsters){
+    if(m.cooldown && m.cooldown>0) m.cooldown--;
+    const dist = Math.abs(m.x-player.x) + Math.abs(m.y-player.y);
+
+    // базовая простая логика по типам
+    if(m.type === 'chaser'){
+      if(dist === 1){ player.hp -= m.dmg; continue; }
+      const nx = m.x + Math.sign(player.x - m.x), ny = m.y + Math.sign(player.y - m.y);
+      if(canMove(nx,ny) && !occupiedByMonster(nx,ny) && !(nx===player.x && ny===player.y)){ m.x = nx; m.y = ny; }
+    } else if(m.type === 'jumper'){
+      if(dist === 1){ player.hp -= m.dmg; continue; }
+      const dx = Math.sign(player.x - m.x), dy = Math.sign(player.y - m.y);
+      const jumpX = m.x + dx*2, jumpY = m.y + dy*2, midX = m.x + dx, midY = m.y + dy;
+      if((dx!==0 || dy!==0) && inBounds(jumpX,jumpY) && canMove(jumpX,jumpY) && !occupiedByMonster(jumpX,jumpY) && !(jumpX===player.x && jumpY===player.y) && canMove(midX,midY)){
+        m.x = jumpX; m.y = jumpY;
+      } else {
+        const nx = m.x + dx, ny = m.y + dy;
+        if(canMove(nx,ny) && !occupiedByMonster(nx,ny) && !(nx===player.x && ny===player.y)){ m.x = nx; m.y = ny; }
+      }
+    } else if(m.type === 'wanderer'){
+      if(Math.random() < 0.6){
+        const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+        const [dx,dy] = dirs[randInt(0,dirs.length-1)];
+        const nx = m.x + dx, ny = m.y + dy;
+        if(canMove(nx,ny) && !occupiedByMonster(nx,ny) && !(nx===player.x && ny===player.y)){ m.x = nx; m.y = ny; }
+      } else {
+        const nx = m.x + Math.sign(player.x-m.x), ny = m.y + Math.sign(player.y-m.y);
+        if(canMove(nx,ny) && !occupiedByMonster(nx,ny) && !(nx===player.x && ny===player.y)){ m.x = nx; m.y = ny; }
+      }
+      if(Math.abs(m.x-player.x) + Math.abs(m.y-player.y) === 1) player.hp -= m.dmg;
+    } else if(m.type === 'ranged'){
+      if(dist <= 2){ player.hp -= m.dmg; }
+      else if(dist <= 6){ if(!m.cooldown){ player.hp -= m.dmg; m.cooldown = 2; } }
+      else {
+        const nx = m.x + Math.sign(player.x - m.x), ny = m.y + Math.sign(player.y - m.y);
+        if(canMove(nx,ny) && !occupiedByMonster(nx,ny) && !(nx===player.x && ny===player.y)){ m.x = nx; m.y = ny; }
+      }
+    }
+  }
+}
+
+/* -----------------------------
+   Открытие сундука — лут идёт в инвентарь, сундук исчезает
+   ----------------------------- */
+function collectChest(){
+  for(let i = mapState.chests.length - 1; i >= 0; i--){
+    const c = mapState.chests[i];
+    if(c.x === player.x && c.y === player.y){
+      // добавляем содержимое в инвентарь
+      for(const item of c.content) player.inv.push(item);
+      // сундук исчезает
+      mapState.chests.splice(i,1);
+      // небольшая подсказка
+      // можно заменить на анимацию/спрайт открытого сундука
+      // alert('Сундук открыт: ' + c.content.join(', '));
+    }
+  }
+}
+
+/* -----------------------------
+   Ходы игрока, двери, прогрессия
+   ----------------------------- */
+function playerStep(dx,dy){
+  const nx = player.x + dx, ny = player.y + dy;
+  if(!inBounds(nx,ny)) return;
+  // нельзя ходить в стены
+  if(!canMove(nx,ny)) return;
+  // нельзя шагать на клетку с монстром
+  if(occupiedByMonster(nx,ny)) return;
+
+  player.x = nx; player.y = ny;
+  // после шага монстры отвечают ходом
+  moveMonsters();
+  // сундуки — только при заходе в ту же клетку сундук откроется и исчезнет
+  collectChest();
+
+  const tile = mapState.map[ny][nx];
+
+if (tile === '>') {
+  // переход вниз (на следующий уровень)
+  levelNum++;
+  player.level = levelNum; // обновляем уровень игрока
+  mapState = generateMap(levelNum);
+
+  // найти дверь вверх и поставить игрока рядом
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      if (mapState.map[y][x] === '<') {
+        player.x = x;
+        player.y = y + 1;
+        break;
+      }
+    }
+  }
+
+} else if (tile === '<') {
+  // переход вверх (тоже повышает уровень)
+  levelNum++;
+  player.level = levelNum; // обновляем уровень игрока
+  mapState = generateMap(levelNum);
+
+  // найти дверь вниз и поставить игрока рядом
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      if (mapState.map[y][x] === '>') {
+        player.x = x;
+        player.y = y - 1;
+        break;
+      }
+    }
+  }
+}
+
+  if(player.hp <= 0){ alert('Вы умерли!'); init(); return; }
+  updateUI();
+  draw();
+}
+
+/* -----------------------------
+   Атаки
+   - Z: обычная атака (по соседним клеткам)
+   - C: усиленная атака (2x dmg)
+   После атаки монстры делают ход (ответ)
+   ----------------------------- */
+function attack(power = 1){
+  const dmg = Math.max(1, Math.floor(player.dmg * power));
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  // проходим в обратном порядке, чтобы корректно удалять монстров
+  for(let i = mapState.monsters.length - 1; i >= 0; i--){
+    const m = mapState.monsters[i];
+    for(const d of dirs){
+      if(m.x === player.x + d[0] && m.y === player.y + d[1]){
+        m.hp -= dmg;
+        break;
+      }
+    }
+    if(m.hp <= 0){
+      mapState.monsters.splice(i,1);
+    }
+  }
+
+  // ответный ход монстров
+  moveMonsters();
+
+  if(player.hp <= 0){ alert('Вы умерли!'); init(); return; }
+  updateUI();
+  draw();
+}
+
+/* -----------------------------
+   Использование зелья
+   - ищем любое название, содержащее "зелье" (регистрозависимость игнорируем)
+   - применяем эффект в зависимости от типа
+   ----------------------------- */
+function usePotion(){
+  const idx = player.inv.findIndex(it => typeof it === 'string' && it.toLowerCase().includes('зелье'));
+  if(idx === -1){
+    // нет зелий
+    // короткий визуальный фидбек (можно заменить на toast)
+    // alert('У вас нет зелий.');
+    return;
+  }
+  const pot = player.inv[idx];
+  const heal = { 'зелье малое':20, 'зелье среднее':50, 'зелье большое':100 }[pot.toLowerCase()] || 20;
+  player.hp = Math.min(100, player.hp + heal);
+  player.inv.splice(idx,1);
+  updateUI();
+  draw();
+}
+
+/* -----------------------------
+   UI: обновление, крафт
+   ----------------------------- */
+function updateUI(){
+  hpEl.textContent = player.hp;
+  levelEl.textContent = player.level;
+  dmgEl.textContent = player.dmg;
+  invEl.textContent = player.inv.length ? player.inv.join(', ') : 'Пусто';
+}
+
+// рендер списка рецептов + кнопки "Сотворить"
+function renderRecipes(){
+  recipesList.innerHTML = '';
+  for(const key in RECIPES){
+    const r = RECIPES[key];
+    const div = document.createElement('div');
+    div.className = 'recipe';
+    div.innerHTML = `<b>${key}</b> — ${r.description} <br><span class="small-muted">Требуется: ${Object.entries(r.requires).map(([k,v])=>v+'x '+k).join(', ')}</span>`;
+    const btn = document.createElement('button');
+    btn.textContent = 'Сотворить';
+    btn.className = 'small';
+    btn.onclick = ()=> attemptCraft(key);
+    div.appendChild(document.createElement('br'));
+    div.appendChild(btn);
+    recipesList.appendChild(div);
+  }
+}
+
+function attemptCraft(name){
+  const r = RECIPES[name]; if(!r) return;
+  // проверка наличия ингредиентов
+  for(const [k,v] of Object.entries(r.requires)){
+    const count = player.inv.filter(i => i === k).length;
+    if(count < v){ alert('Недостаточно ингредиентов'); return; }
+  }
+  // удаляем ингредиенты
+  for(const [k,v] of Object.entries(r.requires)){
+    for(let i=0;i<v;i++){
+      const idx = player.inv.indexOf(k);
+      if(idx >= 0) player.inv.splice(idx,1);
+    }
+  }
+  // добавляем результат
+  player.inv.push(name);
+  updateUI();
+  draw();
+  alert(`${name} создано!`);
+}
+
+/* -----------------------------
+   Обработчики клавиш
+   ----------------------------- */
+window.addEventListener('keydown', e=>{
+  if(e.key === 'ArrowUp') playerStep(0,-1);
+  else if(e.key === 'ArrowDown') playerStep(0,1);
+  else if(e.key === 'ArrowLeft') playerStep(-1,0);
+  else if(e.key === 'ArrowRight') playerStep(1,0);
+  else if(e.key.toLowerCase() === 'z') attack(1);
+  else if(e.key.toLowerCase() === 'c') attack(2);
+  else if(e.key.toLowerCase() === 'x') usePotion();
+});
+
+/* -----------------------------
+   Загрузка пользовательских спрайтов
+   ----------------------------- */
+btnUpload.onclick = ()=> fileInput.click();
+fileInput.onchange = e=>{
+  const file = e.target.files[0]; if(!file) return;
+  const img = new Image();
+  img.onload = ()=>{ images[spriteTypeSelect.value] = img; draw(); URL.revokeObjectURL(img.src); };
+  img.src = URL.createObjectURL(file);
+};
+
+/* -----------------------------
+   Прочие контролы
+   ----------------------------- */
+tileSizeSelect.onchange = e=>{
+  TILE = parseInt(e.target.value) || 32;
+  resizeCanvas();
+};
+btnCraftOpen.onclick = ()=>{ renderRecipes(); craftModal.style.display = 'block'; };
+craftClose.onclick = ()=>{ craftModal.style.display = 'none'; };
+btnUse.onclick = ()=> usePotion();
+
+/* -----------------------------
+   Начальное обновление
+   ----------------------------- */
+updateUI();
+draw();
+</script>
+<script>
+// --- Проверка на мобильное устройство ---
+const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+
+// --- Добавляем сенсорные кнопки, если мобильное ---
+if (isMobile) {
+  const touchControls = document.createElement('div');
+  touchControls.id = 'touchControls';
+  touchControls.innerHTML = `
+    <div class="touch-dpad">
+      <button data-dir="up">▲</button>
+      <div>
+        <button data-dir="left">◀</button>
+        <button data-dir="down">▼</button>
+        <button data-dir="right">▶</button>
+      </div>
+    </div>
+    <div class="touch-actions">
+      <button data-act="attack">Z</button>
+      <button data-act="strong">C</button>
+      <button data-act="use">X</button>
+    </div>
+  `;
+  document.body.appendChild(touchControls);
+
+  // Стили
+  const style = document.createElement('style');
+  style.textContent = `
+  #touchControls {
+    position: fixed;
+    bottom: 10px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    pointer-events: auto;
+    z-index: 100;
+  }
+  .touch-dpad {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-left: 10px;
+  }
+  .touch-dpad > div {
+    display: flex;
+    gap: 6px;
+  }
+  .touch-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-right: 10px;
+    gap: 6px;
+  }
+  #touchControls button {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 1px solid #888;
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    font-size: 20px;
+    font-family: monospace;
+    touch-action: manipulation;
+  }
+  @media (max-width: 768px){
+    #ui {
+      width: auto;
+      right: auto;
+      left: 5px;
+      bottom: 5px;
+      top: auto;
+      font-size: 12px;
+      max-width: 90vw;
+      background: rgba(0,0,0,0.65);
+    }
+    #invContent { max-height: 20vh; }
+  }
+  `;
+  document.head.appendChild(style);
+
+  // Обработка нажатий
+  touchControls.addEventListener('touchstart', e => {
+    const dir = e.target.dataset.dir;
+    const act = e.target.dataset.act;
+    if (dir) {
+      if (dir === 'up') playerStep(0, -1);
+      else if (dir === 'down') playerStep(0, 1);
+      else if (dir === 'left') playerStep(-1, 0);
+      else if (dir === 'right') playerStep(1, 0);
+    } else if (act) {
+      if (act === 'attack') playerAttack();
+      else if (act === 'strong') playerStrongAttack();
+      else if (act === 'use') usePotion();
+    }
+  });
+}
+</script>
+</body>
+</html>
