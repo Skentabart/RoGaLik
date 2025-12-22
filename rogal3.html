@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Rogalik Fixed</title>
+
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  background:#000;
+  color:#fff;
+  font-family:monospace;
+  overflow:hidden;
+}
+canvas{
+  display:block;
+  image-rendering:pixelated;
+}
+#ui{
+  position:fixed;
+  top:8px;
+  left:8px;
+  right:8px;
+  background:rgba(0,0,0,.75);
+  padding:6px;
+  border:1px solid #333;
+  font-size:14px;
+}
+#touch{
+  position:fixed;
+  bottom:12px;
+  left:50%;
+  transform:translateX(-50%);
+  display:grid;
+  grid-template-columns:60px 60px 60px;
+  gap:6px;
+}
+.touch-btn{
+  width:60px;
+  height:60px;
+  background:#111;
+  border:1px solid #555;
+  color:#fff;
+  font-size:20px;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="ui">
+HP: <span id="hp"></span>
+&nbsp; DMG: <span id="dmg"></span>
+&nbsp; LVL: <span id="lvl"></span>
+</div>
+
+<div id="touch">
+<button class="touch-btn" data-dx="0" data-dy="-1">▲</button>
+<button class="touch-btn" data-dx="-1" data-dy="0">◀</button>
+<button class="touch-btn" data-dx="1" data-dy="0">▶</button>
+<button class="touch-btn" data-dx="0" data-dy="1">▼</button>
+<button class="touch-btn" id="atk">⚔</button>
+<button class="touch-btn" id="pot">🧪</button>
+</div>
+
+<script>
+/* =====================
+   CONFIG
+===================== */
+const TILE = 32;
+const MAP_W = 40;
+const MAP_H = 40;
+
+/* =====================
+   GAME STATE (LOGIC)
+===================== */
+const Game = {
+  map: [],
+  monsters: [],
+  chests: [],
+  level: 1,
+  player: {
+    x: 20, y: 20,
+    hp: 100,
+    maxHp: 100,
+    dmg: 10,
+    inv: []
+  }
+};
+
+/* =====================
+   PARTICLES / EFFECTS
+===================== */
+const Effects = {
+  particles: [],
+  shake: 0,
+  flash: 0,
+  spawn(x,y,color,count=10){
+    for(let i=0;i<count;i++){
+      this.particles.push({
+        x,y,
+        vx:(Math.random()-.5)*2,
+        vy:(Math.random()-.5)*2,
+        life:30,
+        color
+      });
+    }
+  },
+  update(){
+    this.particles=this.particles.filter(p=>{
+      p.x+=p.vx; p.y+=p.vy; p.life--;
+      return p.life>0;
+    });
+    if(this.shake>0) this.shake--;
+    if(this.flash>0) this.flash-=0.05;
+  }
+};
+
+/* =====================
+   MAP GENERATION
+===================== */
+function genMap(){
+  Game.map=[];
+  Game.monsters=[];
+  for(let y=0;y<MAP_H;y++){
+    let r=[];
+    for(let x=0;x<MAP_W;x++){
+      r.push(
+        x==0||y==0||x==MAP_W-1||y==MAP_H-1||Math.random()<0.15
+        ? '#':'.'
+      );
+    }
+    Game.map.push(r);
+  }
+  for(let i=0;i<5+Game.level;i++){
+    let x,y;
+    do{
+      x=1+Math.random()*(MAP_W-2)|0;
+      y=1+Math.random()*(MAP_H-2)|0;
+    }while(Game.map[y][x]=='#');
+    Game.monsters.push({
+      x,y,
+      hp:20+Game.level*5,
+      dmg:4+Game.level,
+      cd:0
+    });
+  }
+}
+
+/* =====================
+   CANVAS / RENDER
+===================== */
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+
+function resize(){
+  canvas.width=innerWidth;
+  canvas.height=innerHeight;
+}
+addEventListener('resize',resize);
+resize();
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  let camX=Game.player.x*TILE-canvas.width/2;
+  let camY=Game.player.y*TILE-canvas.height/2;
+
+  if(Effects.shake){
+    camX+= (Math.random()-.5)*10;
+    camY+= (Math.random()-.5)*10;
+  }
+
+  // tiles
+  for(let y=0;y<MAP_H;y++){
+    for(let x=0;x<MAP_W;x++){
+      if(Game.map[y][x]=='#'){
+        ctx.fillStyle='#444';
+        ctx.fillRect(x*TILE-camX,y*TILE-camY,TILE,TILE);
+      }
+    }
+  }
+
+  // monsters
+  ctx.fillStyle='#f33';
+  Game.monsters.forEach(m=>{
+    ctx.fillRect(m.x*TILE-camX,m.y*TILE-camY,TILE,TILE);
+  });
+
+  // player
+  ctx.fillStyle='#ff0';
+  ctx.fillRect(
+    Game.player.x*TILE-camX,
+    Game.player.y*TILE-camY,
+    TILE,TILE
+  );
+
+  // particles
+  Effects.particles.forEach(p=>{
+    ctx.fillStyle=p.color;
+    ctx.fillRect(p.x-camX,p.y-camY,3,3);
+  });
+
+  if(Effects.flash>0){
+    ctx.fillStyle=`rgba(255,255,255,${Effects.flash})`;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+  }
+}
+
+/* =====================
+   LOGIC
+===================== */
+function move(dx,dy){
+  const nx=Game.player.x+dx;
+  const ny=Game.player.y+dy;
+  if(Game.map[ny][nx]=='#') return;
+  if(Game.monsters.some(m=>m.x==nx&&m.y==ny)) return;
+  Game.player.x=nx; Game.player.y=ny;
+}
+
+function attack(){
+  Game.monsters=Game.monsters.filter(m=>{
+    const d=Math.abs(m.x-Game.player.x)+Math.abs(m.y-Game.player.y);
+    if(d==1){
+      m.hp-=Game.player.dmg;
+      Effects.spawn(m.x*TILE,m.y*TILE,'#f00',15);
+      Effects.flash=0.3;
+      Effects.shake=5;
+    }
+    return m.hp>0;
+  });
+}
+
+/* =====================
+   INPUT
+===================== */
+addEventListener('keydown',e=>{
+  if(e.key=='ArrowUp') move(0,-1);
+  if(e.key=='ArrowDown') move(0,1);
+  if(e.key=='ArrowLeft') move(-1,0);
+  if(e.key=='ArrowRight') move(1,0);
+  if(e.key=='z') attack();
+});
+
+document.querySelectorAll('.touch-btn[data-dx]').forEach(b=>{
+  b.onclick=()=>move(+b.dataset.dx,+b.dataset.dy);
+});
+document.getElementById('atk').onclick=attack;
+
+/* =====================
+   LOOP
+===================== */
+function loop(){
+  Effects.update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+/* =====================
+   START
+===================== */
+genMap();
+loop();
+</script>
+</body>
+</html>
