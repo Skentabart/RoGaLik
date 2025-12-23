@@ -436,44 +436,47 @@ function playerStep(dx,dy){
 /* -----------------------------
    TOUCH / MOBILE CONTROLS
    ----------------------------- */
-// Добавляем стилизованную панель управления для смартфонов (3x3 D-pad + правый столб действий)
+// Добавляем элементы управления для смартфона
 const touchLayer = document.createElement('div');
 touchLayer.id = 'touchLayer';
+touchLayer.style.position = 'fixed';
+touchLayer.style.left = '8px';
+touchLayer.style.bottom = '8px';
+touchLayer.style.zIndex = '60';
+touchLayer.style.display = 'flex';
+touchLayer.style.gap = '6px';
 document.body.appendChild(touchLayer);
 
 function createTouchButton(id, label){
   const b = document.createElement('button');
-  b.id = id; b.className = 'touch-btn'; b.textContent = label;
+  b.id = id; b.className = 'small'; b.textContent = label;
+  b.style.opacity = '0.9'; b.style.minWidth = '48px'; b.style.minHeight = '48px';
   return b;
 }
 
-// кнопки направления и действия
-const btnUp = createTouchButton('btnUp','▲');
-const btnDown = createTouchButton('btnDown','▼');
-const btnLeft = createTouchButton('btnLeft','◀');
-const btnRight = createTouchButton('btnRight','▶');
-const btnCenter = createTouchButton('btnCenter','●');
-const btnAtk = createTouchButton('btnAtk','⚔');
-const btnStrongMobile = createTouchButton('btnStrongMobile','💥');
-const btnUseMobile = createTouchButton('btnUseMobile','🧪');
+const btnUp = createTouchButton('btnUp','↑');
+const btnDown = createTouchButton('btnDown','↓');
+const btnLeft = createTouchButton('btnLeft','←');
+const btnRight = createTouchButton('btnRight','→');
+const btnAtk = createTouchButton('btnAtk','Z');
+const btnStrongMobile = createTouchButton('btnStrongMobile','C');
+const btnUseMobile = createTouchButton('btnUseMobile','X');
 
-// Pad (3x3)
-const pad = document.createElement('div'); pad.className = 'touch-pad';
-pad.appendChild(document.createElement('div'));
-pad.appendChild(btnUp);
-pad.appendChild(document.createElement('div'));
-pad.appendChild(btnLeft);
-pad.appendChild(btnCenter);
-pad.appendChild(btnRight);
-pad.appendChild(document.createElement('div'));
-pad.appendChild(btnDown);
-pad.appendChild(document.createElement('div'));
+const movePad = document.createElement('div'); movePad.style.display='grid'; movePad.style.gridTemplateColumns='48px 48px 48px';
+movePad.appendChild(document.createElement('div'));
+movePad.appendChild(btnUp);
+movePad.appendChild(document.createElement('div'));
+movePad.appendChild(btnLeft);
+movePad.appendChild(document.createElement('div'));
+movePad.appendChild(btnRight);
+movePad.appendChild(document.createElement('div'));
+movePad.appendChild(btnDown);
+movePad.appendChild(document.createElement('div'));
 
-// Actions column
-const actions = document.createElement('div'); actions.className = 'touch-actions';
-actions.appendChild(btnUseMobile); actions.appendChild(btnAtk); actions.appendChild(btnStrongMobile);
+const actions = document.createElement('div'); actions.style.display='flex'; actions.style.flexDirection='column'; actions.style.gap='6px';
+actions.appendChild(btnAtk); actions.appendChild(btnStrongMobile); actions.appendChild(btnUseMobile);
 
-touchLayer.appendChild(pad); touchLayer.appendChild(actions);
+touchLayer.appendChild(movePad); touchLayer.appendChild(actions);
 
 // поддержка удержания: при pointerdown начинается интервал ходов, pointerup — стоп
 const holdIntervals = {};
@@ -485,8 +488,6 @@ function stopHold(id){ if(!holdIntervals[id]) return; clearInterval(holdInterval
   btnDown.addEventListener(evt, e=>{ e.preventDefault(); startHold('down', ()=>playerStep(0,1)); });
   btnLeft.addEventListener(evt, e=>{ e.preventDefault(); startHold('left', ()=>playerStep(-1,0)); });
   btnRight.addEventListener(evt, e=>{ e.preventDefault(); startHold('right', ()=>playerStep(1,0)); });
-  // центр — простая кнопка ожидания/ничего
-  btnCenter.addEventListener(evt, e=>{ e.preventDefault(); /* noop or open menu */ });
 });
 [ 'pointerup','pointercancel','touchend','mouseup','mouseleave' ].forEach(evt=>{
   btnUp.addEventListener(evt, e=>{ e.preventDefault(); stopHold('up'); });
@@ -499,21 +500,17 @@ btnAtk.addEventListener('click', ()=> attack(1));
 btnStrongMobile.addEventListener('click', ()=> attack(2));
 btnUseMobile.addEventListener('click', ()=> usePotion());
 
-// Desktop UI buttons (оставляем как были)
+// Desktop UI buttons
 if(btnAttack) btnAttack.addEventListener('click', ()=> attack(1));
 if(btnStrong) btnStrong.addEventListener('click', ()=> attack(2));
 if(btnUse) btnUse.addEventListener('click', ()=> usePotion());
 
-// Стили для touch-панели
+// Показываем touch-управление только на устройствах без hover (мобильные)
 const style = document.createElement('style');
 style.textContent = `
 @media (hover: hover) { #touchLayer{ display:none !important } }
-#touchLayer{ position:fixed; left:8px; bottom:8px; z-index:60; display:flex; gap:8px; align-items:flex-end; }
-.touch-pad{ display:grid; grid-template-columns: repeat(3,56px); grid-template-rows: repeat(3,56px); gap:8px; }
-.touch-btn{ width:56px; height:56px; border-radius:10px; background: rgba(18,18,18,0.95); color:#fff; border:1px solid #444; font-size:20px; display:flex; align-items:center; justify-content:center; box-shadow: 0 2px 0 rgba(0,0,0,0.6); }
-.touch-btn:active{ transform: translateY(1px); box-shadow: none; }
-.touch-actions{ display:flex; flex-direction:column; gap:8px; }
-.touch-actions .touch-btn{ width:48px; height:48px; border-radius:8px; font-size:18px; }
+#touchLayer { display:flex; align-items:flex-end; }
+#touchLayer button { border-radius:8px; background: rgba(20,20,20,0.85); color:#fff; border:1px solid #666; font-size:18px; }
 `;
 document.head.appendChild(style);
 
