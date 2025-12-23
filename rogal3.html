@@ -9,7 +9,10 @@
 body{ margin:0; background:#000; color:#fff; font-family:monospace; overflow:hidden; }
 #gameWrap{ position:relative; width:100vw; height:100vh; }
 canvas{ display:block; background:#000; image-rendering: pixelated; }
-#ui{ position:absolute; right:10px; top:10px; background:var(--ui-bg); padding:10px; border:1px solid #444; width:360px; font-size:14px; line-height:1.3; }
+#ui{ position:absolute; right:10px; top:48px; background:var(--ui-bg); padding:10px; border:1px solid #444; width:360px; font-size:14px; line-height:1.3; display:none; }
+#topMenu{ position:absolute; right:10px; top:10px; display:flex; gap:8px; align-items:center; z-index:70; }
+#menuToggle{ background:var(--btn); color:#fff; border:1px solid var(--btn-border); padding:6px 8px; cursor:pointer; border-radius:6px; }
+#statusBar{ color:#fff; font-size:13px; align-items:center; display:inline-flex; gap:8px; }
 #invContent{ max-height:34vh; overflow:auto; margin-top:6px; white-space:pre-wrap; }
 #controls{ margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; }
 button, select { background:var(--btn); color:#fff; border:1px solid var(--btn-border); padding:6px 8px; cursor:pointer; }
@@ -25,6 +28,10 @@ button, select { background:var(--btn); color:#fff; border:1px solid var(--btn-b
 </head>
 <body>
 <div id="gameWrap">
+  <div id="topMenu">
+    <button id="menuToggle" class="small">☰</button>
+    <div id="statusBar">Ур: <b id="statusLevel">1</b> &nbsp; HP: <b id="statusHp">100</b> &nbsp; Урон: <b id="statusDmg">10</b></div>
+  </div>
   <canvas id="game"></canvas>
 
   <div id="ui">
@@ -121,6 +128,22 @@ const craftModal = document.getElementById('craftModal');
 const recipesList = document.getElementById('recipesList');
 const craftClose = document.getElementById('craftClose');
 const spriteTypeSelect = document.getElementById('spriteTypeSelect');
+
+// menu toggle + persistent status (справа сверху)
+const menuToggle = document.getElementById('menuToggle');
+const statusLevel = document.getElementById('statusLevel');
+const statusHp = document.getElementById('statusHp');
+const statusDmg = document.getElementById('statusDmg');
+
+if(menuToggle){
+  menuToggle.addEventListener('click', ()=>{
+    const ui = document.getElementById('ui');
+    if(!ui) return;
+    const isShown = ui.style.display === 'block';
+    ui.style.display = isShown ? 'none' : 'block';
+    menuToggle.textContent = isShown ? '☰' : '✕';
+  });
+}
 
 const RECIPES = {
   'Супер-Зелье': { requires: {'Зелье среднее':1, 'Кристалл':1}, description: 'Восстанавливает много HP' },
@@ -574,6 +597,10 @@ function updateUI(){
   levelEl.textContent = player.level;
   dmgEl.textContent = player.dmg;
   invEl.textContent = player.inv.length ? player.inv.join(', ') : 'Пусто';
+  // обновляем компактную панель статуса
+  if(typeof statusLevel !== 'undefined' && statusLevel) statusLevel.textContent = player.level;
+  if(typeof statusHp !== 'undefined' && statusHp) statusHp.textContent = player.hp;
+  if(typeof statusDmg !== 'undefined' && statusDmg) statusDmg.textContent = player.dmg;
 }
 
 // рендер списка рецептов + кнопки "Сотворить"
