@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Pixel Art 8x8</title>
+<style>
+  body {
+    background: #111;
+    color: #0f0;
+    font-family: monospace;
+    text-align: center;
+  }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(8, 40px);
+    grid-template-rows: repeat(8, 40px);
+    gap: 2px;
+    justify-content: center;
+    margin: 20px auto;
+  }
+  .pixel {
+    width: 40px;
+    height: 40px;
+    background: #222;
+    border: 1px solid #333;
+    cursor: pointer;
+  }
+  .pixel.on {
+    background: #0f0;
+  }
+  button {
+    margin: 10px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  pre {
+    margin-top: 10px;
+    color: #fff;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+
+<h2>8×8 Pixel Art</h2>
+
+<div id="grid"></div>
+
+<button onclick="exportPixels()">Показать код</button>
+<button onclick="copyCode()">Скопировать код</button>
+
+<pre id="output"></pre>
+
+<script>
+  const size = 8;
+  const grid = document.getElementById("grid");
+  const output = document.getElementById("output");
+
+  const pixels = Array.from({ length: size }, () =>
+    Array(size).fill(0)
+  );
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const div = document.createElement("div");
+      div.className = "pixel";
+      div.dataset.x = x;
+      div.dataset.y = y;
+
+      div.onclick = () => {
+        pixels[y][x] ^= 1;
+        div.classList.toggle("on");
+      };
+
+      grid.appendChild(div);
+    }
+  }
+
+  function exportPixels() {
+    const result = pixels.map(row => `"${row.join("")}"`);
+    output.textContent = `[${result.join(",")}]`;
+  }
+
+  function copyCode() {
+    if (!output.textContent) {
+      exportPixels();
+    }
+    navigator.clipboard.writeText(output.textContent)
+      .then(() => {
+        alert("Код скопирован в буфер обмена!");
+      })
+      .catch(() => {
+        alert("Ошибка копирования");
+      });
+  }
+</script>
+
+</body>
+</html>
