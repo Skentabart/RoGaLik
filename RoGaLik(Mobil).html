@@ -3,13 +3,16 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Веб-рогалик — craft & AI enemies (объединённый)</title>
+<title>Rogalik — merged (Rogal 2 features)</title>
 <style>
 :root{ --ui-bg: rgba(0,0,0,0.78); --btn:#111; --btn-border:#fff; }
 body{ margin:0; background:#000; color:#fff; font-family:monospace; overflow:hidden; }
 #gameWrap{ position:relative; width:100vw; height:100vh; }
 canvas{ display:block; background:#000; image-rendering: pixelated; }
-#ui{ position:absolute; right:10px; top:10px; background:var(--ui-bg); padding:10px; border:1px solid #444; width:360px; font-size:14px; line-height:1.3; }
+#ui{ position:absolute; right:10px; top:48px; background:var(--ui-bg); padding:10px; border:1px solid #444; width:360px; font-size:14px; line-height:1.3; display:none; }
+#topMenu{ position:absolute; right:10px; top:10px; display:flex; gap:8px; align-items:center; z-index:70; }
+#menuToggle{ background:var(--btn); color:#fff; border:1px solid var(--btn-border); padding:6px 8px; cursor:pointer; border-radius:6px; }
+#statusBar{ color:#fff; font-size:13px; align-items:center; display:inline-flex; gap:8px; }
 #invContent{ max-height:34vh; overflow:auto; margin-top:6px; white-space:pre-wrap; }
 #controls{ margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; }
 button, select { background:var(--btn); color:#fff; border:1px solid var(--btn-border); padding:6px 8px; cursor:pointer; }
@@ -19,13 +22,16 @@ button, select { background:var(--btn); color:#fff; border:1px solid var(--btn-b
 .row{ display:flex; gap:8px; align-items:center; }
 .recipe { border:1px solid #333; padding:8px; margin:6px 0; }
 .small-muted{ color:#aaa; font-size:12px; }
-.input-inline{ display:inline-block; margin-left:6px; }
 .header-row{ display:flex; gap:8px; align-items:center; justify-content:space-between; }
 .stat { font-size:12px; color:#ccc; }
 </style>
 </head>
 <body>
 <div id="gameWrap">
+  <div id="topMenu">
+    <button id="menuToggle" class="small">☰</button>
+    <div id="statusBar">Ур: <b id="statusLevel">1</b> &nbsp; HP: <b id="statusHp">100</b> &nbsp; Урон: <b id="statusDmg">10</b></div>
+  </div>
   <canvas id="game"></canvas>
 
   <div id="ui">
@@ -39,6 +45,8 @@ button, select { background:var(--btn); color:#fff; border:1px solid var(--btn-b
 
     <div id="controls">
       <button id="btnUpload" class="small">Загрузить спрайт</button>
+      <button id="btnAttack" class="small">Атака (Z)</button>
+      <button id="btnStrong" class="small">Сильная (C)</button>
       <button id="btnCraftOpen" class="small">Крафт</button>
       <button id="btnUse" class="small">Использовать (X)</button>
       <select id="tileSizeSelect" class="small" title="Размер клетки">
@@ -86,18 +94,68 @@ let mapState, player, levelNum;
 let images = { player:null, wall:null, chest:null, floor:null, monster_chaser:null, monster_jumper:null, monster_wanderer:null, monster_ranged:null, coin:null, door_up:null, door_down:null };
 const fileInput = document.getElementById('fileInput');
 
+// Эффекты
+let particles = [];
+let screenFlash = { active: false, color: '#FF0000', duration: 0, maxDuration: 10 };
+let attackAnimation = { active: false, x: 0, y: 0, frame: 0, maxFrame: 5 };
+
+// Функция для отражения спрайта
+function mirrorSprite(sprite) {
+  return sprite.map(row => row.split('').reverse().join(''));
+}
+
+const SPRITES = {
+  player_right_0:["00111100","01111110","01101010","11111111","01111110","01111110","00101010","00100010"],
+  player_right_1:["00111100","01111110","01101011","01111110","11111110","01111110","00101010","00100010"],
+  player_left_0: mirrorSprite(["00111100","01111110","01101010","11111111","01111110","01111110","00101010","00100010"]),
+  player_left_1: mirrorSprite(["00111100","01111110","01101011","01111110","11111110","01111110","00101010","00100010"]),
+  wall:["11111111","10101010","11111111","10101010","11111111","10101010","11111111","10101010"],
+  floor:["00000000","00010000","00000000","00100000","00000000","00001000","00000000","00000000"],
+  chest:["01111110","01000010","01111110","01101110","01111110","01000010","01111110","00000000"],
+  coin:["00111100","01111110","01111110","01111110","01111110","01111110","00111100","00000000"],
+  door_up:["00111100","01100110","01100110","01100110","01100110","01100110","01111110","00000000"],
+  door_down:["01111110","01100110","01100110","01100110","01100110","01100110","00111100","00000000"],
+  monster_chaser:["00111100","01011010","01111110","01111110","00111100","01000010","10000001","00000000"],
+  monster_jumper:["00011000","00111100","01111110","00111100","00011000","00100100","01000010","00000000"],
+  monster_wanderer:["00111100","01000010","01011010","01000010","00111100","00011000","00100100","00000000"],
+  monster_ranged:["00111100","01100110","01111110","01011010","00111100","00100100","01000010","00000000"]
+};
+const COLORS = {
+  player:'#FFD700', wall:'#777', floor:'#111', chest:'#B8860B', coin:'#FFD700',
+  door_up:'#33FF66', door_down:'#FF3333',
+  monster_chaser:'#AA55FF', monster_jumper:'#FF5500', monster_wanderer:'#88CC44', monster_ranged:'#3399FF'
+};
+
 const hpEl = document.getElementById('hp');
 const invEl = document.getElementById('invContent');
 const levelEl = document.getElementById('level');
 const dmgEl = document.getElementById('dmg');
 const btnUpload = document.getElementById('btnUpload');
 const btnUse = document.getElementById('btnUse');
+const btnAttack = document.getElementById('btnAttack');
+const btnStrong = document.getElementById('btnStrong');
 const tileSizeSelect = document.getElementById('tileSizeSelect');
 const btnCraftOpen = document.getElementById('btnCraftOpen');
 const craftModal = document.getElementById('craftModal');
 const recipesList = document.getElementById('recipesList');
 const craftClose = document.getElementById('craftClose');
 const spriteTypeSelect = document.getElementById('spriteTypeSelect');
+
+// menu toggle + persistent status (справа сверху)
+const menuToggle = document.getElementById('menuToggle');
+const statusLevel = document.getElementById('statusLevel');
+const statusHp = document.getElementById('statusHp');
+const statusDmg = document.getElementById('statusDmg');
+
+if(menuToggle){
+  menuToggle.addEventListener('click', ()=>{
+    const ui = document.getElementById('ui');
+    if(!ui) return;
+    const isShown = ui.style.display === 'block';
+    ui.style.display = isShown ? 'none' : 'block';
+    menuToggle.textContent = isShown ? '☰' : '✕';
+  });
+}
 
 const RECIPES = {
   'Супер-Зелье': { requires: {'Зелье среднее':1, 'Кристалл':1}, description: 'Восстанавливает много HP' },
@@ -107,6 +165,89 @@ const RECIPES = {
 };
 
 function randInt(min,max){ return Math.floor(Math.random()*(max-min+1)) + min; }
+
+// Функции эффектов
+function addParticle(x, y, color, life = 20) {
+  particles.push({ x, y, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, color, life, type: 'normal' });
+}
+
+function addProjectile(sx, sy, tx, ty, color, speed = 4) {
+  const dx = tx - sx, dy = ty - sy;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if(dist === 0) return;
+  const vx = (dx / dist) * speed;
+  const vy = (dy / dist) * speed;
+  particles.push({ x: sx, y: sy, vx, vy, color, life: Math.ceil(dist / speed) + 10, type: 'projectile' }); // дольше живет
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles(camX, camY) {
+  particles.forEach(p => {
+    const sx = (p.x - camX) * TILE;
+    const sy = (p.y - camY) * TILE;
+    ctx.fillStyle = p.color;
+    if(p.type === 'projectile'){
+      ctx.globalAlpha = 1; // стрела яркая
+      ctx.fillRect(sx - 2, sy - 2, 6, 6);
+    } else {
+      ctx.globalAlpha = p.life / 20;
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+  });
+  ctx.globalAlpha = 1;
+}
+
+function triggerScreenFlash(color = '#FF0000', duration = 10) {
+  screenFlash.active = true;
+  screenFlash.color = color;
+  screenFlash.duration = duration;
+  screenFlash.maxDuration = duration;
+}
+
+function updateEffects() {
+  updateParticles();
+  if (screenFlash.active) {
+    screenFlash.duration--;
+    if (screenFlash.duration <= 0) screenFlash.active = false;
+  }
+  if (attackAnimation.active) {
+    attackAnimation.frame++;
+    if (attackAnimation.frame >= attackAnimation.maxFrame) attackAnimation.active = false;
+  }
+  // Сброс анимации игрока, если не двигается
+  if (Date.now() - player.lastMoveTime > 500) {
+    player.animationFrame = 0;
+  }
+}
+
+function drawEffects(camX, camY) {
+  drawParticles(camX, camY);
+  if (screenFlash.active) {
+    const alpha = screenFlash.duration / screenFlash.maxDuration;
+    ctx.fillStyle = screenFlash.color;
+    ctx.globalAlpha = alpha * 0.3;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = 1;
+  }
+  if (attackAnimation.active) {
+    const alpha = (attackAnimation.maxFrame - attackAnimation.frame) / attackAnimation.maxFrame;
+    ctx.fillStyle = '#FF0000';
+    ctx.globalAlpha = alpha * 0.7;
+    const sx = (attackAnimation.x - camX) * TILE;
+    const sy = (attackAnimation.y - camY) * TILE;
+    ctx.fillRect(sx, sy, TILE, TILE);
+    ctx.globalAlpha = 1;
+  }
+}
 
 /* -----------------------------
    Canvas / размер
@@ -183,12 +324,23 @@ for (const d of doors) {
 function init(){
   levelNum = 1;
   mapState = generateMap(levelNum);
-  player = { x: Math.floor(MAP_W/2), y: Math.floor(MAP_H/2), hp: 100, inv: [], level:1, dmg:10 };
+  player = { x: Math.floor(MAP_W/2), y: Math.floor(MAP_H/2), hp: 100, inv: [], level:1, dmg:10, direction: 'right', animationFrame: 0, lastMoveTime: Date.now() };
+  particles = [];
+  screenFlash = { active: false, color: '#FF0000', duration: 0, maxDuration: 10 };
+  attackAnimation = { active: false, x: 0, y: 0, frame: 0, maxFrame: 5 };
   resizeCanvas();
   updateUI();
   draw();
+  gameLoop();
 }
 init();
+
+// Игровой цикл для анимаций
+function gameLoop() {
+  updateEffects();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
 
 /* -----------------------------
    Рисование
@@ -196,18 +348,18 @@ init();
 function drawTileByType(type, px, py){
   if(type === '#'){
     if(images.wall && images.wall.complete) ctx.drawImage(images.wall, px, py, TILE, TILE);
-    else { ctx.fillStyle = '#666'; ctx.fillRect(px, py, TILE, TILE); }
+    else drawPixelSprite('wall', px, py);
   } else if(type === '.' ){
     if(images.floor && images.floor.complete) ctx.drawImage(images.floor, px, py, TILE, TILE);
-    else { ctx.fillStyle = '#111'; ctx.fillRect(px, py, TILE, TILE); }
+    else drawPixelSprite('floor', px, py);
   } else if(type === '>'){
     if(images.door_up && images.door_up.complete) ctx.drawImage(images.door_up, px, py, TILE, TILE);
-    else { ctx.fillStyle='green'; ctx.fillRect(px, py, TILE, TILE); }
+    else drawPixelSprite('door_up', px, py);
   } else if(type === '<'){
     if(images.door_down && images.door_down.complete) ctx.drawImage(images.door_down, px, py, TILE, TILE);
-    else { ctx.fillStyle='red'; ctx.fillRect(px, py, TILE, TILE); }
+    else drawPixelSprite('door_down', px, py);
   } else {
-    ctx.fillStyle = '#111'; ctx.fillRect(px, py, TILE, TILE);
+    drawPixelSprite('floor', px, py);
   }
 }
 
@@ -216,8 +368,10 @@ function drawMonster(m, px, py){
   if(images[imgKey] && images[imgKey].complete){
     ctx.drawImage(images[imgKey], px, py, TILE, TILE);
   } else {
-    const col = m.type==='chaser'?'#8A2BE2':m.type==='jumper'?'#FF4500':m.type==='wanderer'?'#9ACD32':'#1E90FF';
-    ctx.fillStyle = col; ctx.fillRect(px, py, TILE, TILE);
+    // рисуем встроенный 8x8 спрайт если есть
+    const key = 'monster_' + m.type;
+    if(SPRITES[key]) drawPixelSprite(key, px, py);
+    else { const col = m.type==='chaser'?'#8A2BE2':m.type==='jumper'?'#FF4500':m.type==='wanderer'?'#9ACD32':'#1E90FF'; ctx.fillStyle = col; ctx.fillRect(px, py, TILE, TILE); }
   }
 }
 
@@ -242,7 +396,7 @@ function draw(){
     const cx = c.x - camX, cy = c.y - camY;
     if(cx>=0 && cy>=0 && cx<cols && cy<rows){
       if(images.chest && images.chest.complete) ctx.drawImage(images.chest, cx*TILE, cy*TILE, TILE, TILE);
-      else { ctx.fillStyle='blue'; ctx.fillRect(cx*TILE, cy*TILE, TILE, TILE); }
+      else { drawPixelSprite('chest', cx*TILE, cy*TILE); }
     }
   });
 
@@ -255,18 +409,38 @@ function draw(){
   // игрок в центре
   const playerScreenX = halfCols*TILE, playerScreenY = halfRows*TILE;
   if(images.player && images.player.complete) ctx.drawImage(images.player, playerScreenX, playerScreenY, TILE, TILE);
-  else { ctx.fillStyle='yellow'; ctx.fillRect(playerScreenX, playerScreenY, TILE, TILE); }
-  // 🔦 ЭФФЕКТ ЗАТЕМНЕНИЯ (с "дыханием света")
-  lightFlicker = 0.85 + Math.sin(Date.now() / 250) * 0.05;
-  const radius = 5 * TILE * lightFlicker;
+  else { 
+    const spriteName = `player_${player.direction}_${player.animationFrame % 2}`;
+    drawPixelSprite(spriteName, playerScreenX, playerScreenY); 
+  }
+    // 🔦 ЭФФЕКТ ЗАТЕМНЕНИЯ вокруг игрока
+  const radius = 5 * TILE; // радиус освещения
   const cx = playerScreenX + TILE / 2;
   const cy = playerScreenY + TILE / 2;
 
-  const gradient = ctx.createRadialGradient(cx, cy, radius * 0.3, cx, cy, radius);
+  // затемнение по всей карте
+  const gradient = ctx.createRadialGradient(cx, cy, radius * 0.5, cx, cy, radius);
   gradient.addColorStop(0, 'rgba(0,0,0,0)');
   gradient.addColorStop(1, 'rgba(0,0,0,0.95)');
+
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Эффекты
+  drawEffects(camX, camY);
+
+}
+
+// Рисование 8x8 pixel-спрайта в случае отсутствия изображения
+function drawPixelSprite(name, x, y){
+  const s = SPRITES[name]; if(!s) return;
+  const px = TILE/8;
+  ctx.fillStyle = COLORS[name] || '#fff';
+  for(let j=0;j<8;j++){
+    for(let i=0;i<8;i++){
+      if(s[j][i] === '1') ctx.fillRect(x + i*px, y + j*px, px, px);
+    }
+  }
 }
 
 /* -----------------------------
@@ -308,8 +482,8 @@ function moveMonsters(){
       }
       if(Math.abs(m.x-player.x) + Math.abs(m.y-player.y) === 1) player.hp -= m.dmg;
     } else if(m.type === 'ranged'){
-      if(dist <= 2){ player.hp -= m.dmg; }
-      else if(dist <= 6){ if(!m.cooldown){ player.hp -= m.dmg; m.cooldown = 2; } }
+      if(dist <= 2){ player.hp -= m.dmg; addProjectile(m.x, m.y, player.x, player.y, '#FFFF00', 3); }
+      else if(dist <= 6){ if(!m.cooldown){ player.hp -= m.dmg; addProjectile(m.x, m.y, player.x, player.y, '#FFFF00', 3); m.cooldown = 2; } }
       else {
         const nx = m.x + Math.sign(player.x - m.x), ny = m.y + Math.sign(player.y - m.y);
         if(canMove(nx,ny) && !occupiedByMonster(nx,ny) && !(nx===player.x && ny===player.y)){ m.x = nx; m.y = ny; }
@@ -327,6 +501,10 @@ function collectChest(){
     if(c.x === player.x && c.y === player.y){
       // добавляем содержимое в инвентарь
       for(const item of c.content) player.inv.push(item);
+      // Эффект открытия сундука
+      for(let j = 0; j < 10; j++) {
+        addParticle(c.x * TILE + TILE/2, c.y * TILE + TILE/2, '#FFD700', 40);
+      }
       // сундук исчезает
       mapState.chests.splice(i,1);
       // небольшая подсказка
@@ -340,6 +518,7 @@ function collectChest(){
    Ходы игрока, двери, прогрессия
    ----------------------------- */
 function playerStep(dx,dy){
+  const oldHp = player.hp;
   const nx = player.x + dx, ny = player.y + dy;
   if(!inBounds(nx,ny)) return;
   // нельзя ходить в стены
@@ -348,52 +527,146 @@ function playerStep(dx,dy){
   if(occupiedByMonster(nx,ny)) return;
 
   player.x = nx; player.y = ny;
+  // Установка направления и анимации
+  if (dx > 0) player.direction = 'right';
+  else if (dx < 0) player.direction = 'left';
+  player.animationFrame = (player.animationFrame + 1) % 4; // 4 кадра анимации
+  player.lastMoveTime = Date.now();
   // после шага монстры отвечают ходом
   moveMonsters();
+  // Эффект ранения, если HP уменьшился
+  if(player.hp < oldHp){
+    triggerScreenFlash('#FF0000', 10);
+    for(let j=0;j<5;j++) addParticle(player.x, player.y, '#FF0000', 20);
+  }
   // сундуки — только при заходе в ту же клетку сундук откроется и исчезнет
   collectChest();
 
   const tile = mapState.map[ny][nx];
+  if (tile === '>') {
+    // переход вниз (на следующий уровень)
+    levelNum++;
+    player.level = levelNum; // обновляем уровень игрока
+    mapState = generateMap(levelNum);
+    // Эффект перехода
+    triggerScreenFlash('#FFFFFF', 20);
 
-if (tile === '>') {
-  // переход вниз (на следующий уровень)
-  levelNum++;
-  player.level = levelNum; // обновляем уровень игрока
-  mapState = generateMap(levelNum);
+    // найти дверь вверх и поставить игрока рядом
+    for (let y = 0; y < MAP_H; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        if (mapState.map[y][x] === '<') {
+          player.x = x;
+          player.y = y + 1;
+          break;
+        }
+      }
+    }
 
-  // найти дверь вверх и поставить игрока рядом
-  for (let y = 0; y < MAP_H; y++) {
-    for (let x = 0; x < MAP_W; x++) {
-      if (mapState.map[y][x] === '<') {
-        player.x = x;
-        player.y = y + 1;
-        break;
+  } else if (tile === '<') {
+    // переход вверх (тоже повышает уровень)
+    levelNum++;
+    player.level = levelNum; // обновляем уровень игрока
+    mapState = generateMap(levelNum);
+    // Эффект перехода
+    triggerScreenFlash('#FFFFFF', 20);
+
+    // найти дверь вниз и поставить игрока рядом
+    for (let y = 0; y < MAP_H; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        if (mapState.map[y][x] === '>') {
+          player.x = x;
+          player.y = y - 1;
+          break;
+        }
       }
     }
   }
-
-} else if (tile === '<') {
-  // переход вверх (тоже повышает уровень)
-  levelNum++;
-  player.level = levelNum; // обновляем уровень игрока
-  mapState = generateMap(levelNum);
-
-  // найти дверь вниз и поставить игрока рядом
-  for (let y = 0; y < MAP_H; y++) {
-    for (let x = 0; x < MAP_W; x++) {
-      if (mapState.map[y][x] === '>') {
-        player.x = x;
-        player.y = y - 1;
-        break;
-      }
-    }
-  }
-}
 
   if(player.hp <= 0){ alert('Вы умерли!'); init(); return; }
   updateUI();
-  draw();
+  // draw(); // убрано, так как gameLoop рисует
 }
+
+/* -----------------------------
+   TOUCH / MOBILE CONTROLS
+   ----------------------------- */
+// Добавляем элементы управления для смартфона
+const touchLayer = document.createElement('div');
+touchLayer.id = 'touchLayer';
+touchLayer.style.position = 'fixed';
+touchLayer.style.left = '8px';
+touchLayer.style.bottom = '8px';
+touchLayer.style.zIndex = '60';
+touchLayer.style.display = 'flex';
+touchLayer.style.gap = '6px';
+document.body.appendChild(touchLayer);
+
+function createTouchButton(id, label){
+  const b = document.createElement('button');
+  b.id = id; b.className = 'small'; b.textContent = label;
+  b.style.opacity = '0.9'; b.style.minWidth = '48px'; b.style.minHeight = '48px';
+  return b;
+}
+
+const btnUp = createTouchButton('btnUp','↑');
+const btnDown = createTouchButton('btnDown','↓');
+const btnLeft = createTouchButton('btnLeft','←');
+const btnRight = createTouchButton('btnRight','→');
+const btnAtk = createTouchButton('btnAtk','⚔');
+const btnStrongMobile = createTouchButton('btnStrongMobile','⚔2');
+const btnUseMobile = createTouchButton('btnUseMobile','⚗');
+
+const movePad = document.createElement('div'); movePad.style.display='grid'; movePad.style.gridTemplateColumns='48px 48px 48px';
+movePad.appendChild(document.createElement('div'));
+movePad.appendChild(btnUp);
+movePad.appendChild(document.createElement('div'));
+movePad.appendChild(btnLeft);
+movePad.appendChild(document.createElement('div'));
+movePad.appendChild(btnRight);
+movePad.appendChild(document.createElement('div'));
+movePad.appendChild(btnDown);
+movePad.appendChild(document.createElement('div'));
+
+const actions = document.createElement('div'); actions.style.display='flex'; actions.style.flexDirection='column'; actions.style.gap='6px';
+actions.appendChild(btnAtk); actions.appendChild(btnStrongMobile); actions.appendChild(btnUseMobile);
+
+touchLayer.appendChild(movePad); touchLayer.appendChild(actions);
+
+// поддержка удержания: при pointerdown начинается интервал ходов, pointerup — стоп
+const holdIntervals = {};
+function startHold(id, fn){ if(holdIntervals[id]) return; fn(); holdIntervals[id]=setInterval(fn,150); }
+function stopHold(id){ if(!holdIntervals[id]) return; clearInterval(holdIntervals[id]); delete holdIntervals[id]; }
+
+['pointerdown','touchstart','mousedown'].forEach(evt=>{
+  btnUp.addEventListener(evt, e=>{ e.preventDefault(); startHold('up', ()=>playerStep(0,-1)); });
+  btnDown.addEventListener(evt, e=>{ e.preventDefault(); startHold('down', ()=>playerStep(0,1)); });
+  btnLeft.addEventListener(evt, e=>{ e.preventDefault(); startHold('left', ()=>playerStep(-1,0)); });
+  btnRight.addEventListener(evt, e=>{ e.preventDefault(); startHold('right', ()=>playerStep(1,0)); });
+});
+[ 'pointerup','pointercancel','touchend','mouseup','mouseleave' ].forEach(evt=>{
+  btnUp.addEventListener(evt, e=>{ e.preventDefault(); stopHold('up'); });
+  btnDown.addEventListener(evt, e=>{ e.preventDefault(); stopHold('down'); });
+  btnLeft.addEventListener(evt, e=>{ e.preventDefault(); stopHold('left'); });
+  btnRight.addEventListener(evt, e=>{ e.preventDefault(); stopHold('right'); });
+});
+
+btnAtk.addEventListener('click', ()=> attack(1));
+btnStrongMobile.addEventListener('click', ()=> attack(2));
+btnUseMobile.addEventListener('click', ()=> usePotion());
+
+// Desktop UI buttons
+if(btnAttack) btnAttack.addEventListener('click', ()=> attack(1));
+if(btnStrong) btnStrong.addEventListener('click', ()=> attack(2));
+if(btnUse) btnUse.addEventListener('click', ()=> usePotion());
+
+// Показываем touch-управление только на устройствах без hover (мобильные)
+const style = document.createElement('style');
+style.textContent = `
+@media (hover: hover) { #touchLayer{ display:none !important } }
+#touchLayer { display:flex; align-items:flex-end; }
+#touchLayer button { border-radius:8px; background: rgba(20,20,20,0.85); color:#fff; border:1px solid #666; font-size:18px; }
+`;
+document.head.appendChild(style);
 
 /* -----------------------------
    Атаки
@@ -410,10 +683,23 @@ function attack(power = 1){
     for(const d of dirs){
       if(m.x === player.x + d[0] && m.y === player.y + d[1]){
         m.hp -= dmg;
+        // Эффект атаки
+        attackAnimation.active = true;
+        attackAnimation.x = m.x;
+        attackAnimation.y = m.y;
+        attackAnimation.frame = 0;
+        // Частицы при атаке
+        for(let j = 0; j < 3; j++) {
+          addParticle(m.x, m.y, '#FFFF00', 15);
+        }
         break;
       }
     }
     if(m.hp <= 0){
+      // Частицы крови при смерти
+      for(let j = 0; j < 5; j++) {
+        addParticle(m.x * TILE + TILE/2, m.y * TILE + TILE/2, '#FF0000', 30);
+      }
       mapState.monsters.splice(i,1);
     }
   }
@@ -423,7 +709,7 @@ function attack(power = 1){
 
   if(player.hp <= 0){ alert('Вы умерли!'); init(); return; }
   updateUI();
-  draw();
+  // draw(); // убрано, так как gameLoop рисует
 }
 
 /* -----------------------------
@@ -443,8 +729,10 @@ function usePotion(){
   const heal = { 'зелье малое':20, 'зелье среднее':50, 'зелье большое':100 }[pot.toLowerCase()] || 20;
   player.hp = Math.min(100, player.hp + heal);
   player.inv.splice(idx,1);
+  // Эффект исцеления
+  triggerScreenFlash('#00FF00', 15);
   updateUI();
-  draw();
+  // draw(); // убрано
 }
 
 /* -----------------------------
@@ -455,6 +743,10 @@ function updateUI(){
   levelEl.textContent = player.level;
   dmgEl.textContent = player.dmg;
   invEl.textContent = player.inv.length ? player.inv.join(', ') : 'Пусто';
+  // обновляем компактную панель статуса
+  if(typeof statusLevel !== 'undefined' && statusLevel) statusLevel.textContent = player.level;
+  if(typeof statusHp !== 'undefined' && statusHp) statusHp.textContent = player.hp;
+  if(typeof statusDmg !== 'undefined' && statusDmg) statusDmg.textContent = player.dmg;
 }
 
 // рендер списка рецептов + кнопки "Сотворить"
@@ -492,7 +784,7 @@ function attemptCraft(name){
   // добавляем результат
   player.inv.push(name);
   updateUI();
-  draw();
+  // draw(); // убрано
   alert(`${name} создано!`);
 }
 
@@ -535,106 +827,7 @@ btnUse.onclick = ()=> usePotion();
    Начальное обновление
    ----------------------------- */
 updateUI();
-draw();
-</script>
-<script>
-// --- Проверка на мобильное устройство ---
-const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
-
-// --- Добавляем сенсорные кнопки, если мобильное ---
-if (isMobile) {
-  const touchControls = document.createElement('div');
-  touchControls.id = 'touchControls';
-  touchControls.innerHTML = `
-    <div class="touch-dpad">
-      <button data-dir="up">▲</button>
-      <div>
-        <button data-dir="left">◀</button>
-        <button data-dir="down">▼</button>
-        <button data-dir="right">▶</button>
-      </div>
-    </div>
-    <div class="touch-actions">
-      <button data-act="attack">Z</button>
-      <button data-act="strong">C</button>
-      <button data-act="use">X</button>
-    </div>
-  `;
-  document.body.appendChild(touchControls);
-
-  // Стили
-  const style = document.createElement('style');
-  style.textContent = `
-  #touchControls {
-    position: fixed;
-    bottom: 10px;
-    left: 0;
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
-    pointer-events: auto;
-    z-index: 100;
-  }
-  .touch-dpad {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-left: 10px;
-  }
-  .touch-dpad > div {
-    display: flex;
-    gap: 6px;
-  }
-  .touch-actions {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    margin-right: 10px;
-    gap: 6px;
-  }
-  #touchControls button {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    border: 1px solid #888;
-    background: rgba(255,255,255,0.1);
-    color: #fff;
-    font-size: 20px;
-    font-family: monospace;
-    touch-action: manipulation;
-  }
-  @media (max-width: 768px){
-    #ui {
-      width: auto;
-      right: auto;
-      left: 5px;
-      bottom: 5px;
-      top: auto;
-      font-size: 12px;
-      max-width: 90vw;
-      background: rgba(0,0,0,0.65);
-    }
-    #invContent { max-height: 20vh; }
-  }
-  `;
-  document.head.appendChild(style);
-
-  // Обработка нажатий
-  touchControls.addEventListener('touchstart', e => {
-    const dir = e.target.dataset.dir;
-    const act = e.target.dataset.act;
-    if (dir) {
-      if (dir === 'up') playerStep(0, -1);
-      else if (dir === 'down') playerStep(0, 1);
-      else if (dir === 'left') playerStep(-1, 0);
-      else if (dir === 'right') playerStep(1, 0);
-    } else if (act) {
-      if (act === 'attack') playerAttack();
-      else if (act === 'strong') playerStrongAttack();
-      else if (act === 'use') usePotion();
-    }
-  });
-}
+// draw(); // убрано, gameLoop рисует
 </script>
 </body>
 </html>
