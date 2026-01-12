@@ -141,8 +141,12 @@ function mirrorSprite(sprite) {
 const SPRITES = {
   player_right_0:["00111100","01111110","01101010","11111111","01111110","01111110","00101010","00100010"],
   player_right_1:["00111100","01111110","01101011","01111110","11111110","01111110","00101010","00100010"],
+  player_right_2:["00111100","01111110","01101010","11111111","01111110","01111110","00101010","00100010"],
+  player_right_3:["00111100","01111110","01101011","01111110","11111110","01111110","00101010","00100010"],
   player_left_0: mirrorSprite(["00111100","01111110","01101010","11111111","01111110","01111110","00101010","00100010"]),
   player_left_1: mirrorSprite(["00111100","01111110","01101011","01111110","11111110","01111110","00101010","00100010"]),
+  player_left_2: mirrorSprite(["00111100","01111110","01101010","11111111","01111110","01111110","00101010","00100010"]),
+  player_left_3: mirrorSprite(["00111100","01111110","01101011","01111110","11111110","01111110","00101010","00100010"]),
   wall:["11111111","10101010","11111111","10101010","11111111","10101010","11111111","10101010"],
   floor:["00000000","00010000","00000000","00100000","00000000","00001000","00000000","00000000"],
   chest:["01111110","01000010","01111110","01101110","01111110","01000010","01111110","00000000"],
@@ -216,14 +220,37 @@ if(btnDevMenu){
 if(devObjectSelect){
   devObjectSelect.addEventListener('change', ()=>{
     const type = devObjectSelect.value;
-    drawSpritePreview(type);
+    if (type === 'player') {
+      directionSelect.value = player.direction;
+      frameSelect.value = player.animationFrame.toString();
+    } else {
+      directionSelect.value = 'none';
+      frameSelect.value = '0';
+    }
+    drawSpritePreview(type, directionSelect.value, parseInt(frameSelect.value));
+  });
+}
+
+if(directionSelect){
+  directionSelect.addEventListener('change', ()=>{
+    const type = devObjectSelect.value;
+    drawSpritePreview(type, directionSelect.value, parseInt(frameSelect.value));
+  });
+}
+
+if(frameSelect){
+  frameSelect.addEventListener('change', ()=>{
+    const type = devObjectSelect.value;
+    drawSpritePreview(type, directionSelect.value, parseInt(frameSelect.value));
   });
 }
 
 if(editCurrentBtn){
   editCurrentBtn.addEventListener('click', ()=>{
     const type = devObjectSelect.value;
-    loadCurrentSpriteToEditor(type);
+    const direction = directionSelect.value;
+    const frame = parseInt(frameSelect.value);
+    loadCurrentSpriteToEditor(type, direction, frame);
     spriteEditorModal.style.display = 'block';
   });
 }
@@ -271,13 +298,41 @@ function initPixelEditor() {
   spriteOutput.textContent = '';
 }
 
+function drawSpritePreview(type, direction = null, frame = null) {
+  const ctx = spritePreview.getContext('2d');
+  ctx.clearRect(0, 0, 64, 64);
+  let spriteName;
+  if (type === 'player') {
+    const dir = direction || player.direction;
+    const fr = frame !== null ? frame : player.animationFrame;
+    spriteName = `player_${dir}_${fr}`;
+  } else {
+    spriteName = type;
+  }
+  const s = SPRITES[spriteName];
+  if (!s) return;
+  const px = 64 / 8; // 8
+  ctx.fillStyle = COLORS[type] || '#fff';
+  for (let j = 0; j < 8; j++) {
+    for (let i = 0; i < 8; i++) {
+      if (s[j][i] === '1') ctx.fillRect(i * px, j * px, px, px);
+    }
+  }
+}
+
 function exportEditorPixels() {
   const result = editorPixels.map(row => `"${row.join('')}"`);
   return `[${result.join(',')}]`;
 }
 
-function loadCurrentSpriteToEditor(type) {
-  const sprite = SPRITES[type];
+function loadCurrentSpriteToEditor(type, direction = 'none', frame = 0) {
+  let key;
+  if (type === 'player') {
+    key = `player_${direction}_${frame}`;
+  } else {
+    key = type;
+  }
+  const sprite = SPRITES[key];
   if (!sprite) return;
   const data = Array.isArray(sprite) ? sprite[0] : sprite;
   if (!Array.isArray(data)) return;
@@ -594,9 +649,9 @@ function draw(){
   // игрок в центре
   const playerScreenX = halfCols*TILE, playerScreenY = halfRows*TILE;
   if(images.player && images.player.complete) ctx.drawImage(images.player, playerScreenX, playerScreenY, TILE, TILE);
-  else { 
-    const spriteName = `player_${player.direction}_${player.animationFrame % 2}`;
-    drawPixelSprite(spriteName, playerScreenX, playerScreenY); 
+  else {
+    const spriteName = `player_${player.direction}_${player.animationFrame % 4}`;
+    drawPixelSprite(spriteName, playerScreenX, playerScreenY);
   }
     // 🔦 ЭФФЕКТ ЗАТЕМНЕНИЯ вокруг игрока
   const radius = 5 * TILE; // радиус освещения
